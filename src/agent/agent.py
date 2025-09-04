@@ -43,38 +43,45 @@ class FinanceAgent:
     
     async def process_message(self, message: str, user_id: int) -> str:
         """Process a user message and return a response."""
-        try:
-            # Detect language and validate support
-            from src.utils.language import validate_supported_language, Messages, detect_language
-            
-            is_supported, detected_lang = validate_supported_language(message)
-            if not is_supported:
-                return Messages.get("error", "unsupported_language", "en"), None
-            
-            self.user_language = detected_lang
-            
-            # First, try to parse as transaction intent
-            transaction_intent = await self._extract_transaction_intent(message)
-            if transaction_intent:
-                result = await self._handle_transaction(transaction_intent, user_id)
-                # Return tuple (confirmation_msg, transaction_data) for transactions
-                if isinstance(result, tuple):
-                    return result
-                else:
-                    return result, None
-            
-            # Then try to parse as query intent  
-            query_intent = await self._extract_query_intent(message)
-            if query_intent:
-                return await self._handle_query(query_intent, user_id), None
-            
-            # If neither, provide general help
-            return self._handle_general_message(message), None
-            
-        except Exception as e:
-            # Return error in detected language
-            lang = getattr(self, 'user_language', detect_language(message))
-            return Messages.get("error", "general_error", lang, error=str(e)), None
+        from src.utils.credits import UsageTracker
+        
+        # Track OpenAI API usage for this message
+        message_preview = f"{message[:50]}{'...' if len(message) > 50 else ''}"
+        async with UsageTracker("Message processing", message_preview) as tracker:
+            # Store tracker reference for individual LLM calls
+            self._usage_tracker = tracker
+            try:
+                # Detect language and validate support
+                from src.utils.language import validate_supported_language, Messages, detect_language
+                
+                is_supported, detected_lang = validate_supported_language(message)
+                if not is_supported:
+                    return Messages.get("error", "unsupported_language", "en"), None
+                
+                self.user_language = detected_lang
+                
+                # First, try to parse as transaction intent
+                transaction_intent = await self._extract_transaction_intent(message)
+                if transaction_intent:
+                    result = await self._handle_transaction(transaction_intent, user_id)
+                    # Return tuple (confirmation_msg, transaction_data) for transactions
+                    if isinstance(result, tuple):
+                        return result
+                    else:
+                        return result, None
+                
+                # Then try to parse as query intent  
+                query_intent = await self._extract_query_intent(message)
+                if query_intent:
+                    return await self._handle_query(query_intent, user_id), None
+                
+                # If neither, provide general help
+                return self._handle_general_message(message), None
+                
+            except Exception as e:
+                # Return error in detected language
+                lang = getattr(self, 'user_language', detect_language(message))
+                return Messages.get("error", "general_error", lang, error=str(e)), None
     
     def _handle_general_message(self, message: str) -> str:
         """Handle general messages that aren't transactions or queries."""
@@ -193,6 +200,14 @@ class FinanceAgent:
             response = await self.llm.ainvoke([{"role": "user", "content": extraction_prompt}])
             content = response.content.strip()
             
+            # Track usage if tracker is available
+            if hasattr(self, '_usage_tracker') and self._usage_tracker:
+                from src.utils.credits import log_usage
+                usage_data = getattr(response, 'usage_metadata', None)
+                log_usage(usage_data, "Transaction intent extraction")
+                if usage_data:
+                    self._usage_tracker.add_usage(usage_data)
+            
             if content.lower() in ["null", "none", ""] or not content:
                 return None
             
@@ -298,6 +313,14 @@ class FinanceAgent:
         try:
             response = await self.llm.ainvoke([{"role": "user", "content": extraction_prompt}])
             content = response.content.strip()
+            
+            # Track usage if tracker is available
+            if hasattr(self, '_usage_tracker') and self._usage_tracker:
+                from src.utils.credits import log_usage
+                usage_data = getattr(response, 'usage_metadata', None)
+                log_usage(usage_data, "Query intent extraction")
+                if usage_data:
+                    self._usage_tracker.add_usage(usage_data)
             
             if content.lower() in ["null", "none", ""]:
                 return None
@@ -698,8 +721,13 @@ class FinanceAgent:
         """Handle query processing."""
         try:
             if intent.intent == QueryIntent.BALANCE:
+                # Apply account name normalization for queries too
+                account_name = intent.account_name
+                if account_name:
+                    account_name = await self._find_similar_account(account_name, user_id)
+                
                 balances = await self.db_tool.query_balances(
-                    QueryBalancesInput(account_name=intent.account_name), user_id
+                    QueryBalancesInput(account_name=account_name), user_id
                 )
                 return self._format_balances(balances)
             
@@ -715,12 +743,17 @@ class FinanceAgent:
                     intent.start_date = today
                     intent.end_date = today + timedelta(days=1) - timedelta(microseconds=1)
                 
+                # Apply account name normalization for queries too
+                account_name = intent.account_name
+                if account_name:
+                    account_name = await self._find_similar_account(account_name, user_id)
+                
                 transaction_type = "expense" if intent.intent == QueryIntent.EXPENSES else "income"
                 transactions = await self.db_tool.query_transactions(
                     QueryTransactionsInput(
                         start_date=intent.start_date,
                         end_date=intent.end_date,
-                        account_name=intent.account_name,
+                        account_name=account_name,
                         transaction_type=transaction_type
                     ), user_id
                 )
@@ -804,11 +837,16 @@ class FinanceAgent:
                     intent.start_date = today - timedelta(days=29)
                     intent.end_date = today + timedelta(days=1) - timedelta(microseconds=1)
                 
+                # Apply account name normalization for queries too
+                account_name = intent.account_name
+                if account_name:
+                    account_name = await self._find_similar_account(account_name, user_id)
+                
                 transactions = await self.db_tool.query_transactions(
                     QueryTransactionsInput(
                         start_date=intent.start_date,
                         end_date=intent.end_date,
-                        account_name=intent.account_name,
+                        account_name=account_name,
                         transaction_type=None  # Get all transaction types
                     ), user_id
                 )
