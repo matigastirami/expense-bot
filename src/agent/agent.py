@@ -412,11 +412,16 @@ class FinanceAgent:
                         primary_balance = max(account.balances, key=lambda b: b.balance)
                         resolved_currency = primary_balance.currency
                         
-                        # Map generic symbols to specific currencies based on account's primary currency
+                        # Map generic symbols to specific currencies based on account's currencies
                         if currency == "$":
-                            # If account has USD, use USD. If ARS, use ARS. Default to USD.
-                            if resolved_currency in ["USD", "ARS"]:
-                                return resolved_currency
+                            # Check what dollar currencies the account has
+                            account_currencies = [b.currency for b in account.balances if b.balance > 0]
+                            
+                            # Priority order for $ symbol: USD > ARS > others
+                            if "USD" in account_currencies:
+                                return "USD"  # USD takes priority for $ symbol
+                            elif "ARS" in account_currencies:
+                                return "ARS"  # ARS second priority for $ in Spanish context
                             else:
                                 return "USD"  # Default assumption for $ symbol
                         elif currency == "€":
