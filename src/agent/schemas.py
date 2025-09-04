@@ -44,6 +44,7 @@ class QueryIntent(str, Enum):
     SAVINGS = "savings"
     MONTHLY_REPORT = "monthly_report"
     ALL_ACCOUNTS = "all_accounts"
+    ALL_TRANSACTIONS = "all_transactions"
 
 
 class ParsedQueryIntent(BaseModel):

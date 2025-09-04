@@ -44,6 +44,15 @@ class FinanceAgent:
     async def process_message(self, message: str, user_id: int) -> str:
         """Process a user message and return a response."""
         try:
+            # Detect language and validate support
+            from src.utils.language import validate_supported_language, Messages, detect_language
+            
+            is_supported, detected_lang = validate_supported_language(message)
+            if not is_supported:
+                return Messages.get("error", "unsupported_language", "en"), None
+            
+            self.user_language = detected_lang
+            
             # First, try to parse as transaction intent
             transaction_intent = await self._extract_transaction_intent(message)
             if transaction_intent:
@@ -63,26 +72,15 @@ class FinanceAgent:
             return self._handle_general_message(message), None
             
         except Exception as e:
-            return f"❌ Sorry, I encountered an error: {str(e)}", None
+            # Return error in detected language
+            lang = getattr(self, 'user_language', detect_language(message))
+            return Messages.get("error", "general_error", lang, error=str(e)), None
     
     def _handle_general_message(self, message: str) -> str:
         """Handle general messages that aren't transactions or queries."""
-        return """
-I'm your personal finance AI assistant! I can help you with:
-
-💰 **Recording transactions** (in Spanish or English):
-• "Recibí 6000 USD en mi cuenta de Deel"
-• "Gasté 400 ARS en el supermercado"
-• "Transferí 1000 USD a Astropay"
-
-📊 **Checking balances and reports**:
-• "¿Cuánto tengo en mi cuenta Deel?"
-• "Show my balance in Astropay"
-• "/balance" - See all balances
-• "/report" - Monthly report
-
-Try describing a financial transaction or asking about your accounts!
-"""
+        from src.utils.language import Messages
+        lang = getattr(self, 'user_language', 'en')
+        return Messages.get("help", "general_help", lang)
     
     async def _extract_transaction_intent(self, message: str) -> Optional[ParsedTransactionIntent]:
         """Extract transaction intent using structured output."""
@@ -242,6 +240,7 @@ Try describing a financial transaction or asking about your accounts!
         - savings: net savings (ahorros, savings, profit, ganancia)
         - monthly_report: monthly summary (reporte mensual, monthly report, resumen del mes)
         - all_accounts: show all accounts (todas las cuentas, all accounts, mis cuentas)
+        - all_transactions: list all transactions (listame las transacciones, list transactions, show transactions, transacciones, historial)
         
         Date/Time parsing (be very smart about this):
         - "hoy/today" → today's date range
@@ -268,7 +267,7 @@ Try describing a financial transaction or asking about your accounts!
         
         Use this exact format:
         {{
-            "intent": "balance|expenses|income|largest_purchase|savings|monthly_report|all_accounts",
+            "intent": "balance|expenses|income|largest_purchase|savings|monthly_report|all_accounts|all_transactions",
             "account_name": "string or null",
             "currency": "string or null", 
             "date_expression": "original date expression from user for parsing",
@@ -282,9 +281,11 @@ Try describing a financial transaction or asking about your accounts!
         - "¿Cuánto tengo en mi cuenta Deel?" → {{"intent": "balance", "account_name": "Deel", "currency": null, "date_expression": null, "start_date": null, "end_date": null, "month": null, "year": null}}
         - "¿Cuánto gasté hoy?" → {{"intent": "expenses", "account_name": null, "currency": null, "date_expression": "hoy", "start_date": null, "end_date": null, "month": null, "year": null}}
         - "¿Cuánto gasté los últimos 7 días?" → {{"intent": "expenses", "account_name": null, "currency": null, "date_expression": "últimos 7 días", "start_date": null, "end_date": null, "month": null, "year": null}}
+        - "listame las transacciones de los últimos 7 días" → {{"intent": "all_transactions", "account_name": null, "currency": null, "date_expression": "últimos 7 días", "start_date": null, "end_date": null, "month": null, "year": null}}
         - "¿Cuál fue mi gasto más grande en agosto?" → {{"intent": "largest_purchase", "account_name": null, "currency": null, "date_expression": "agosto", "start_date": null, "end_date": null, "month": null, "year": null}}
         - "How much did I spend yesterday?" → {{"intent": "expenses", "account_name": null, "currency": null, "date_expression": "yesterday", "start_date": null, "end_date": null, "month": null, "year": null}}
         - "Show my expenses this month in USD" → {{"intent": "expenses", "account_name": null, "currency": "USD", "date_expression": "this month", "start_date": null, "end_date": null, "month": null, "year": null}}
+        - "List all transactions this week" → {{"intent": "all_transactions", "account_name": null, "currency": null, "date_expression": "this week", "start_date": null, "end_date": null, "month": null, "year": null}}
         """
         
         try:
@@ -476,48 +477,89 @@ Try describing a financial transaction or asking about your accounts!
     
     def _format_confirmation_message(self, transaction_data: dict) -> str:
         """Format confirmation message for user approval."""
-        lines = ["🔔 **Confirmación de transacción**", ""]
+        from src.utils.language import Messages
+        lang = getattr(self, 'user_language', 'en')
         
-        # Transaction type
-        type_map = {
-            "income": "💰 Ingreso",
-            "expense": "💸 Gasto", 
-            "transfer": "🔄 Transferencia",
-            "conversion": "💱 Conversión"
-        }
-        lines.append(f"**Tipo:** {type_map.get(transaction_data['transaction_type'], 'Transacción')}")
-        
-        # Amount
-        amount = transaction_data['amount']
-        currency = transaction_data['currency']
-        lines.append(f"**Monto:** {amount:,.0f} {currency}")
-        
-        # Accounts
-        if transaction_data['account_from']:
-            lines.append(f"**Desde:** {transaction_data['account_from']}")
-        if transaction_data['account_to']:
-            lines.append(f"**Hacia:** {transaction_data['account_to']}")
+        if lang == 'es':
+            lines = ["🔔 **Confirmación de transacción**", ""]
             
-        # For conversions
-        if transaction_data['currency_to'] and transaction_data['amount_to']:
-            lines.append(f"**Resultado:** {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}")
-            if transaction_data['exchange_rate']:
-                lines.append(f"**Tasa:** {transaction_data['exchange_rate']:,.2f}")
-        
-        # Description  
-        lines.append(f"**Descripción:** {transaction_data['description']}")
+            # Transaction type
+            type_map = {
+                "income": "💰 Ingreso",
+                "expense": "💸 Gasto", 
+                "transfer": "🔄 Transferencia",
+                "conversion": "💱 Conversión"
+            }
+            lines.append(f"**Tipo:** {type_map.get(transaction_data['transaction_type'], 'Transacción')}")
+            
+            # Amount
+            amount = transaction_data['amount']
+            currency = transaction_data['currency']
+            lines.append(f"**Monto:** {amount:,.0f} {currency}")
+            
+            # Accounts
+            if transaction_data['account_from']:
+                lines.append(f"**Desde:** {transaction_data['account_from']}")
+            if transaction_data['account_to']:
+                lines.append(f"**Hacia:** {transaction_data['account_to']}")
+                
+            # For conversions
+            if transaction_data['currency_to'] and transaction_data['amount_to']:
+                lines.append(f"**Resultado:** {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}")
+                if transaction_data['exchange_rate']:
+                    lines.append(f"**Tasa:** {transaction_data['exchange_rate']:,.2f}")
+            
+            # Description  
+            lines.append(f"**Descripción:** {transaction_data['description']}")
+            
+        else:  # English
+            lines = ["🔔 **Transaction Confirmation**", ""]
+            
+            # Transaction type
+            type_map = {
+                "income": "💰 Income",
+                "expense": "💸 Expense", 
+                "transfer": "🔄 Transfer",
+                "conversion": "💱 Conversion"
+            }
+            lines.append(f"**Type:** {type_map.get(transaction_data['transaction_type'], 'Transaction')}")
+            
+            # Amount
+            amount = transaction_data['amount']
+            currency = transaction_data['currency']
+            lines.append(f"**Amount:** {amount:,.0f} {currency}")
+            
+            # Accounts
+            if transaction_data['account_from']:
+                lines.append(f"**From:** {transaction_data['account_from']}")
+            if transaction_data['account_to']:
+                lines.append(f"**To:** {transaction_data['account_to']}")
+                
+            # For conversions
+            if transaction_data['currency_to'] and transaction_data['amount_to']:
+                lines.append(f"**Result:** {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}")
+                if transaction_data['exchange_rate']:
+                    lines.append(f"**Rate:** {transaction_data['exchange_rate']:,.2f}")
+            
+            # Description  
+            lines.append(f"**Description:** {transaction_data['description']}")
         
         # Date
         if transaction_data['date']:
-            lines.append(f"**Fecha:** {transaction_data['date'].strftime('%d/%m/%Y')}")
+            date_label = "**Fecha:**" if lang == 'es' else "**Date:**"
+            lines.append(f"{date_label} {transaction_data['date'].strftime('%d/%m/%Y')}")
         
-        lines.extend(["", "¿Confirmas esta transacción?"])
+        # Confirmation question
+        confirmation = "¿Confirmas esta transacción?" if lang == 'es' else "Do you confirm this transaction?"
+        lines.extend(["", confirmation])
         
         return "\n".join(lines)
     
     async def confirm_transaction(self, transaction_data: dict) -> str:
         """Actually save the confirmed transaction."""
         try:
+            from src.utils.language import Messages, detect_language
+            
             db_input = RegisterTransactionInput(**transaction_data)
             result = await self.db_tool.register_transaction(db_input)
             
@@ -526,33 +568,59 @@ Try describing a financial transaction or asking about your accounts!
             return result
             
         except Exception as e:
-            return f"❌ Error saving transaction: {str(e)}"
+            # Get language from stored attribute or detect from error context
+            lang = getattr(self, 'user_language', 'en')
+            return Messages.get("error", "transaction_error", lang, error=str(e))
     
     def _format_success_message(self, transaction_data: dict) -> str:
         """Format success message after confirmation."""
+        from src.utils.language import Messages
+        lang = getattr(self, 'user_language', 'en')
+        
         tx_type = transaction_data['transaction_type']
         amount = transaction_data['amount']
         currency = transaction_data['currency']
         
-        if tx_type == "income":
-            msg = f"✅ Ingreso registrado: +{amount:,.0f} {currency}"
-            if transaction_data['account_to']:
-                msg += f"\n📍 Cuenta: {transaction_data['account_to']}"
-        elif tx_type == "expense":
-            msg = f"✅ Gasto registrado: -{amount:,.0f} {currency}" 
-            if transaction_data['account_from']:
-                msg += f"\n📍 Desde: {transaction_data['account_from']}"
-        elif tx_type == "transfer":
-            msg = f"✅ Transferencia registrada: {amount:,.0f} {currency}"
-            if transaction_data['account_from'] and transaction_data['account_to']:
-                msg += f"\n📍 {transaction_data['account_from']} → {transaction_data['account_to']}"
-        elif tx_type == "conversion":
-            msg = f"✅ Conversión registrada: {amount:,.0f} {currency}"
-            if transaction_data['currency_to'] and transaction_data['amount_to']:
-                msg += f"\n💱 → {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}"
-                
-        if transaction_data['date']:
-            msg += f"\n📅 Fecha: {transaction_data['date'].strftime('%d/%m/%Y')}"
+        if lang == 'es':
+            if tx_type == "income":
+                msg = f"✅ Ingreso registrado: +{amount:,.0f} {currency}"
+                if transaction_data['account_to']:
+                    msg += f"\n📍 Cuenta: {transaction_data['account_to']}"
+            elif tx_type == "expense":
+                msg = f"✅ Gasto registrado: -{amount:,.0f} {currency}" 
+                if transaction_data['account_from']:
+                    msg += f"\n📍 Desde: {transaction_data['account_from']}"
+            elif tx_type == "transfer":
+                msg = f"✅ Transferencia registrada: {amount:,.0f} {currency}"
+                if transaction_data['account_from'] and transaction_data['account_to']:
+                    msg += f"\n📍 {transaction_data['account_from']} → {transaction_data['account_to']}"
+            elif tx_type == "conversion":
+                msg = f"✅ Conversión registrada: {amount:,.0f} {currency}"
+                if transaction_data['currency_to'] and transaction_data['amount_to']:
+                    msg += f"\n💱 → {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}"
+            
+            if transaction_data['date']:
+                msg += f"\n📅 Fecha: {transaction_data['date'].strftime('%d/%m/%Y')}"
+        else:
+            if tx_type == "income":
+                msg = f"✅ Income registered: +{amount:,.0f} {currency}"
+                if transaction_data['account_to']:
+                    msg += f"\n📍 Account: {transaction_data['account_to']}"
+            elif tx_type == "expense":
+                msg = f"✅ Expense registered: -{amount:,.0f} {currency}" 
+                if transaction_data['account_from']:
+                    msg += f"\n📍 From: {transaction_data['account_from']}"
+            elif tx_type == "transfer":
+                msg = f"✅ Transfer registered: {amount:,.0f} {currency}"
+                if transaction_data['account_from'] and transaction_data['account_to']:
+                    msg += f"\n📍 {transaction_data['account_from']} → {transaction_data['account_to']}"
+            elif tx_type == "conversion":
+                msg = f"✅ Conversion registered: {amount:,.0f} {currency}"
+                if transaction_data['currency_to'] and transaction_data['amount_to']:
+                    msg += f"\n💱 → {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}"
+            
+            if transaction_data['date']:
+                msg += f"\n📅 Date: {transaction_data['date'].strftime('%d/%m/%Y')}"
             
         return msg
     
@@ -658,6 +726,116 @@ Try describing a financial transaction or asking about your accounts!
                     date_str = format_date_range_spanish(intent.start_date, intent.end_date)
                     return f"❌ No se encontraron gastos {date_str}"
             
+            elif intent.intent == QueryIntent.ALL_TRANSACTIONS:
+                if not intent.start_date or not intent.end_date:
+                    # If no date range, assume last 30 days
+                    from datetime import datetime, timedelta
+                    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                    intent.start_date = today - timedelta(days=29)
+                    intent.end_date = today + timedelta(days=1) - timedelta(microseconds=1)
+                
+                transactions = await self.db_tool.query_transactions(
+                    QueryTransactionsInput(
+                        start_date=intent.start_date,
+                        end_date=intent.end_date,
+                        account_name=intent.account_name,
+                        transaction_type=None  # Get all transaction types
+                    ), user_id
+                )
+                
+                # Format response with date context
+                from src.utils.date_utils import format_date_range_spanish
+                date_str = format_date_range_spanish(intent.start_date, intent.end_date)
+                
+                if not transactions:
+                    return f"💰 No tuviste transacciones {date_str}"
+                
+                # Group transactions by type for summary
+                expenses = [t for t in transactions if t.type == 'expense']
+                income = [t for t in transactions if t.type == 'income']
+                transfers = [t for t in transactions if t.type == 'transfer']
+                conversions = [t for t in transactions if t.type == 'conversion']
+                
+                # Calculate totals by currency
+                def group_by_currency(transactions_list):
+                    currency_totals = {}
+                    for tx in transactions_list:
+                        currency = tx.currency
+                        if currency not in currency_totals:
+                            currency_totals[currency] = 0
+                        currency_totals[currency] += tx.amount
+                    return currency_totals
+                
+                expense_totals = group_by_currency(expenses)
+                income_totals = group_by_currency(income)
+                
+                # Build response
+                lang = getattr(self, 'user_language', 'es')
+                if lang == 'es':
+                    response = f"💼 **Transacciones {date_str}:**\n"
+                    response += f"**Total:** {len(transactions)} transacciones\n\n"
+                    
+                    if expenses:
+                        expense_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in expense_totals.items()])
+                        response += f"💸 **Gastos:** {len(expenses)} transacciones - {expense_summary}\n"
+                    if income:
+                        income_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in income_totals.items()])
+                        response += f"💰 **Ingresos:** {len(income)} transacciones - {income_summary}\n"
+                    if transfers:
+                        response += f"🔄 **Transferencias:** {len(transfers)} transacciones\n"
+                    if conversions:
+                        response += f"💱 **Conversiones:** {len(conversions)} transacciones\n"
+                    
+                    response += "\n📋 **Detalle:**\n"
+                    for tx in transactions[:10]:  # Show first 10 transactions
+                        tx_type_icon = {'expense': '💸', 'income': '💰', 'transfer': '🔄', 'conversion': '💱'}.get(tx.type, '💼')
+                        date_info = tx.date.strftime('%d/%m')
+                        account_info = ""
+                        if tx.account_from and tx.account_to:
+                            account_info = f" ({tx.account_from} → {tx.account_to})"
+                        elif tx.account_from:
+                            account_info = f" (desde {tx.account_from})"
+                        elif tx.account_to:
+                            account_info = f" (hacia {tx.account_to})"
+                        
+                        response += f"• {tx_type_icon} {date_info}: {tx.amount:,.0f} {tx.currency}{account_info} - {tx.description or 'Sin descripción'}\n"
+                    
+                    if len(transactions) > 10:
+                        response += f"\n... y {len(transactions) - 10} transacciones más"
+                else:  # English
+                    response = f"💼 **Transactions {date_str}:**\n"
+                    response += f"**Total:** {len(transactions)} transactions\n\n"
+                    
+                    if expenses:
+                        expense_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in expense_totals.items()])
+                        response += f"💸 **Expenses:** {len(expenses)} transactions - {expense_summary}\n"
+                    if income:
+                        income_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in income_totals.items()])
+                        response += f"💰 **Income:** {len(income)} transactions - {income_summary}\n"
+                    if transfers:
+                        response += f"🔄 **Transfers:** {len(transfers)} transactions\n"
+                    if conversions:
+                        response += f"💱 **Conversions:** {len(conversions)} transactions\n"
+                    
+                    response += "\n📋 **Details:**\n"
+                    for tx in transactions[:10]:  # Show first 10 transactions
+                        tx_type_icon = {'expense': '💸', 'income': '💰', 'transfer': '🔄', 'conversion': '💱'}.get(tx.type, '💼')
+                        date_info = tx.date.strftime('%d/%m')
+                        account_info = ""
+                        if tx.account_from and tx.account_to:
+                            account_info = f" ({tx.account_from} → {tx.account_to})"
+                        elif tx.account_from:
+                            account_info = f" (from {tx.account_from})"
+                        elif tx.account_to:
+                            account_info = f" (to {tx.account_to})"
+                        
+                        response += f"• {tx_type_icon} {date_info}: {tx.amount:,.0f} {tx.currency}{account_info} - {tx.description or 'No description'}\n"
+                    
+                    if len(transactions) > 10:
+                        response += f"\n... and {len(transactions) - 10} more transactions"
+                
+                return response
+
             elif intent.intent == QueryIntent.MONTHLY_REPORT:
                 month = intent.month or datetime.now().month
                 year = intent.year or datetime.now().year
