@@ -97,6 +97,12 @@ class FinanceAgent:
         - conversion: exchanged currencies ONLY when explicitly converting currencies at exchange rates
         
         IMPORTANT: "efectivo" and "cash" are ACCOUNT NAMES, not currencies!
+        IMPORTANT: "$" is a valid currency symbol that will be resolved to the account's primary currency (USD or ARS)
+        
+        Currency handling:
+        - "$" can be used and will be resolved based on the account's primary currency
+        - "USD", "ARS", "USDT", "USDC" are valid currency codes
+        - Other symbols like "€", "£", "¥" are also valid and will be resolved
         
         Spanish patterns:
         - "de mi cuenta de [account]" = account_from: [account] (for expenses)
@@ -172,6 +178,7 @@ class FinanceAgent:
         Examples:
         - "Recibí 6000 USD en mi cuenta de Deel el día 31/08/2025" → income, 6000, USD, account_to: "Deel", date: "2025-08-31", description: "6000 USD salary"
         - "Gasté 400 ARS en el supermercado" → expense, 400, ARS, account_from: null, description: "supermercado"
+        - "Gasté $400 de mercadopago" → expense, 400, "$", account_from: "mercadopago", description: "gasto"
         - "Gasté 426 mil ARS en supermercado becerra de mi cuenta de AstroPay" → expense, 426000, ARS, account_from: "AstroPay", description: "supermercado becerra"
         - "Le di 250 USD a Tami desde la cuenta de AstroPay" → expense, 250, USD, account_from: "AstroPay", description: "250 USD a Tami"
         - "Pagué 50000 ARS de alquiler desde Galicia" → expense, 50000, ARS, account_from: "Galicia", description: "alquiler"
@@ -334,6 +341,17 @@ class FinanceAgent:
     async def _handle_transaction(self, intent: ParsedTransactionIntent, user_id: int) -> str:
         """Handle transaction processing."""
         try:
+            # Find similar existing accounts or normalize names
+            if intent.account_from:
+                intent.account_from = await self._find_similar_account(intent.account_from, user_id)
+            if intent.account_to:
+                intent.account_to = await self._find_similar_account(intent.account_to, user_id)
+            
+            # Resolve generic currency symbols based on account's primary currency
+            intent.currency = await self._resolve_currency_symbol(intent.currency, intent.account_from, intent.account_to, user_id)
+            if intent.currency_to:
+                intent.currency_to = await self._resolve_currency_symbol(intent.currency_to, intent.account_from, intent.account_to, user_id)
+            
             # If exchange rate is needed but not provided, fetch it
             if (intent.intent == TransactionIntent.CONVERSION and 
                 intent.currency_to and not intent.exchange_rate):
@@ -350,12 +368,6 @@ class FinanceAgent:
             description = intent.description
             if not description:
                 description = self._generate_transaction_description(intent)
-            
-            # Find similar existing accounts or normalize names
-            if intent.account_from:
-                intent.account_from = await self._find_similar_account(intent.account_from, user_id)
-            if intent.account_to:
-                intent.account_to = await self._find_similar_account(intent.account_to, user_id)
             
             # Create transaction data for confirmation
             transaction_data = {
@@ -377,6 +389,59 @@ class FinanceAgent:
             
         except Exception as e:
             return f"❌ Error processing transaction: {str(e)}"
+    
+    async def _resolve_currency_symbol(self, currency: str, account_from: Optional[str], account_to: Optional[str], user_id: int) -> str:
+        """
+        Resolve generic currency symbols (like $) to actual currency codes based on account's primary currency.
+        For expenses, check account_from. For income, check account_to.
+        """
+        if not currency or currency in ["$", "₱", "€", "£", "¥"]:  # Generic currency symbols
+            # Determine which account to check based on transaction type
+            account_to_check = None
+            if account_from:  # For expenses/transfers from an account
+                account_to_check = account_from
+            elif account_to:  # For income/transfers to an account
+                account_to_check = account_to
+            
+            if account_to_check:
+                # Get the account's primary currency from its balances
+                async with async_session_maker() as session:
+                    account = await AccountCRUD.get_by_name(session, user_id, account_to_check)
+                    if account and account.balances:
+                        # Find the balance with the highest amount (primary currency)
+                        primary_balance = max(account.balances, key=lambda b: b.balance)
+                        resolved_currency = primary_balance.currency
+                        
+                        # Map generic symbols to specific currencies based on account's primary currency
+                        if currency == "$":
+                            # If account has USD, use USD. If ARS, use ARS. Default to USD.
+                            if resolved_currency in ["USD", "ARS"]:
+                                return resolved_currency
+                            else:
+                                return "USD"  # Default assumption for $ symbol
+                        elif currency == "€":
+                            return "EUR"
+                        elif currency == "£":
+                            return "GBP"  
+                        elif currency == "¥":
+                            return "JPY"
+                        elif currency == "₱":
+                            return "PHP"
+                        else:
+                            return resolved_currency  # Return account's primary currency
+            
+            # If no account specified or account not found, return defaults
+            symbol_map = {
+                "$": "USD",
+                "€": "EUR", 
+                "£": "GBP",
+                "¥": "JPY",
+                "₱": "PHP"
+            }
+            return symbol_map.get(currency, "USD")
+        
+        # Return the currency as-is if it's already a valid currency code
+        return currency
     
     def _generate_transaction_description(self, intent: ParsedTransactionIntent) -> str:
         """Generate a meaningful description for transactions without explicit descriptions."""
