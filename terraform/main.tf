@@ -22,7 +22,7 @@ resource "aws_lightsail_instance" "main" {
   name              = var.instance_name
   availability_zone = "${var.aws_region}a"
   blueprint_id      = "ubuntu_22_04"
-  bundle_id         = "nano_2_0"  # $3.50/month - 1 vCPU, 512 MB RAM, 20 GB SSD
+  bundle_id         = "nano_2_0" # $3.50/month - 1 vCPU, 512 MB RAM, 20 GB SSD
   key_pair_name     = aws_lightsail_key_pair.main.name
 
   user_data = file("${path.module}/user_data.sh")
@@ -53,27 +53,27 @@ resource "aws_lightsail_instance_public_ports" "main" {
     protocol  = "tcp"
     from_port = 22
     to_port   = 22
-    cidrs     = ["0.0.0.0/0"]  # SSH access
+    cidrs     = ["0.0.0.0/0"] # SSH access
   }
 
   port_info {
     protocol  = "tcp"
     from_port = 80
     to_port   = 80
-    cidrs     = ["0.0.0.0/0"]  # HTTP
+    cidrs     = ["0.0.0.0/0"] # HTTP
   }
 
   port_info {
     protocol  = "tcp"
     from_port = 443
     to_port   = 443
-    cidrs     = ["0.0.0.0/0"]  # HTTPS
+    cidrs     = ["0.0.0.0/0"] # HTTPS
   }
 
   port_info {
     protocol  = "tcp"
     from_port = 8000
     to_port   = 8000
-    cidrs     = ["0.0.0.0/0"]  # Bot health check port
+    cidrs     = ["0.0.0.0/0"] # Bot health check port
   }
 }
