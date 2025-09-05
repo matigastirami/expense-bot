@@ -64,7 +64,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -80,55 +80,55 @@ jobs:
       run: |
         ssh ubuntu@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
           set -e
-          
+
           # Navigate to application directory
           cd /opt/expense-tracker
-          
+
           # Create docker-compose.yml if it doesn't exist
           if [ ! -f docker-compose.yml ]; then
             cat > docker-compose.yml << 'COMPOSE_EOF'
-        version: '3.8'
-        
-        services:
-          app:
-            image: ${{ needs.build.outputs.image-tag }}
-            container_name: expense-tracker-bot
-            restart: unless-stopped
-            environment:
-              - POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
-              - POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}
-              - POSTGRES_DB=${{ secrets.POSTGRES_DB }}
-              - POSTGRES_USER=${{ secrets.POSTGRES_USER }}
-              - POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-              - TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-              - OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-              - FX_PRIMARY=coingecko
-              - ARS_SOURCE=blue
-            ports:
-              - "8000:8000"  # Health check port
-            volumes:
-              - ./logs:/app/logs
-            healthcheck:
-              test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-              interval: 30s
-              timeout: 10s
-              retries: 3
-              start_period: 40s
-        COMPOSE_EOF
+version: '3.8'
+
+services:
+  app:
+    image: ${{ needs.build.outputs.image-tag }}
+    container_name: expense-tracker-bot
+    restart: unless-stopped
+    environment:
+      - POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
+      - POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}
+      - POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+      - POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+      - POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+      - TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+      - OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+      - FX_PRIMARY=coingecko
+      - ARS_SOURCE=blue
+    ports:
+      - "8000:8000"  # Health check port
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+COMPOSE_EOF
           fi
-          
+
           # Log in to GitHub Container Registry
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          
+
           # Pull the new image
           docker compose pull
-          
+
           # Stop and remove old containers
           docker compose down || true
-          
+
           # Start new containers
           docker compose up -d
-          
+
           # Wait for health check
           echo "Waiting for application to be healthy..."
           for i in {1..30}; do
@@ -139,10 +139,10 @@ jobs:
             echo "Waiting for application... ($i/30)"
             sleep 10
           done
-          
+
           # Cleanup old images
           docker image prune -f
-          
+
           echo "Deployment completed successfully!"
         EOF
 
@@ -150,7 +150,7 @@ jobs:
       run: |
         # Wait a moment for the service to fully start
         sleep 30
-        
+
         # Check if the health endpoint responds
         if curl -f http://${{ secrets.LIGHTSAIL_HOST }}:8000/health; then
           echo "✅ Deployment successful - health check passed"
