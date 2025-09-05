@@ -1,51 +1,27 @@
-version: '3.8'
+version: "3.8"
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
+    image: ${DOCKER_IMAGE}
     container_name: expense-tracker-bot
     restart: unless-stopped
     environment:
-      # Database (Supabase)
       - POSTGRES_HOST=${POSTGRES_HOST}
-      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_PORT=${POSTGRES_PORT}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      
-      # API Keys
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      
-      # FX Settings
-      - FX_PRIMARY=${FX_PRIMARY:-coingecko}
-      - ARS_SOURCE=${ARS_SOURCE:-blue}
-      
-      # Logging
-      - PYTHONUNBUFFERED=1
-    
+      - FX_PRIMARY=coingecko
+      - ARS_SOURCE=blue
     ports:
-      - "8000:8000"  # Health check port
-    
+      - "8000:8000"
     volumes:
       - ./logs:/app/logs
-      - /etc/localtime:/etc/localtime:ro  # Sync timezone
-    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-networks:
-  default:
-    name: expense-tracker
