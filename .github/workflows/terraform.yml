@@ -1,0 +1,125 @@
+name: Terraform Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+  pull_request:
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: terraform
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "~1.6"
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Terraform Format
+      id: fmt
+      run: terraform fmt -check
+
+    - name: Terraform Init
+      id: init
+      run: terraform init
+
+    - name: Terraform Validate
+      id: validate
+      run: terraform validate -no-color
+
+    - name: Terraform Plan
+      id: plan
+      if: github.event_name == 'pull_request'
+      run: terraform plan -no-color -input=false
+      continue-on-error: true
+
+    - name: Update Pull Request
+      uses: actions/github-script@v7
+      if: github.event_name == 'pull_request'
+      env:
+        PLAN: ${{ steps.plan.outputs.stdout }}
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+          #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+          #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+          #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+
+          <details><summary>Show Plan</summary>
+
+          \`\`\`terraform
+          ${process.env.PLAN}
+          \`\`\`
+
+          </details>
+
+          *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          })
+
+    - name: Terraform Plan Status
+      if: steps.plan.outcome == 'failure'
+      run: exit 1
+
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: terraform apply -auto-approve -input=false
+
+    - name: Extract Terraform Outputs
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      id: outputs
+      run: |
+        echo "static-ip=$(terraform output -raw static_ip)" >> $GITHUB_OUTPUT
+        echo "instance-name=$(terraform output -raw instance_name)" >> $GITHUB_OUTPUT
+        echo "ssh-username=$(terraform output -raw instance_username)" >> $GITHUB_OUTPUT
+        
+        # Save private key to a secure location (for manual setup reference)
+        # Note: In production, consider using AWS Systems Manager Parameter Store
+        terraform output -raw private_key > /tmp/lightsail_key.pem
+        chmod 600 /tmp/lightsail_key.pem
+
+    - name: Display Infrastructure Info
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🏗️ Infrastructure deployed successfully!"
+        echo "📍 Static IP: ${{ steps.outputs.outputs.static-ip }}"
+        echo "🖥️ Instance: ${{ steps.outputs.outputs.instance-name }}"
+        echo "👤 SSH User: ${{ steps.outputs.outputs.ssh-username }}"
+        echo ""
+        echo "🔑 To connect via SSH:"
+        echo "ssh ${{ steps.outputs.outputs.ssh-username }}@${{ steps.outputs.outputs.static-ip }}"
+        echo ""
+        echo "⚠️  Don't forget to:"
+        echo "1. Add the private key to GitHub Secrets as 'LIGHTSAIL_SSH_KEY'"
+        echo "2. Add the static IP to GitHub Secrets as 'LIGHTSAIL_HOST'"
+        echo "3. Configure your Supabase connection secrets"

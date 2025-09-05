@@ -1,0 +1,9 @@
+# Copy this file to terraform.tfvars and update the values
+
+aws_region = "us-east-1"
+project_name = "expense-tracker"
+instance_name = "expense-tracker-bot"
+environment = "prod"
+
+# Optional: Set up a custom domain
+# domain_name = "bot.yourdomain.com"
