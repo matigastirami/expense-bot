@@ -17,14 +17,14 @@ chmod +x /usr/local/bin/docker-compose
 # Install useful tools
 apt-get install -y git curl wget htop unzip fail2ban ufw
 
-# Configure firewall
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow ssh
-ufw allow 80
-ufw allow 443
-ufw allow 8000
-ufw --force enable
+# Configure firewall (commented out to avoid SSH lockout)
+# ufw default deny incoming
+# ufw default allow outgoing
+# ufw allow ssh
+# ufw allow 80
+# ufw allow 443
+# ufw allow 8000
+# ufw --force enable
 
 # Configure fail2ban for SSH protection
 systemctl enable fail2ban
