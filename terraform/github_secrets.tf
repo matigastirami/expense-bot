@@ -1,13 +1,3 @@
-# Configure GitHub provider
-terraform {
-  required_providers {
-    github = {
-      source  = "integrations/github"
-      version = "~> 6.0"
-    }
-  }
-}
-
 # GitHub provider configuration
 provider "github" {
   token = var.github_token
