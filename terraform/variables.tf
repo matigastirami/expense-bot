@@ -27,3 +27,22 @@ variable "domain_name" {
   type        = string
   default     = ""
 }
+
+# GitHub configuration for auto-updating secrets
+variable "github_token" {
+  description = "GitHub personal access token"
+  type        = string
+  sensitive   = true
+}
+
+variable "github_owner" {
+  description = "GitHub repository owner/organization"
+  type        = string
+  default     = "matigastirami"
+}
+
+variable "github_repo" {
+  description = "GitHub repository name"
+  type        = string
+  default     = "expense-bot"
+}
