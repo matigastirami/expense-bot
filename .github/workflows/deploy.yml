@@ -88,15 +88,17 @@ jobs:
             # Navigate to application directory
             cd /opt/expense-tracker
 
-            # Set environment variables for docker-compose
-            export DOCKER_IMAGE="$(echo "${{ needs.build.outputs.image-tag }}" | head -n1)"
-            export POSTGRES_HOST="${{ secrets.POSTGRES_HOST }}"
-            export POSTGRES_PORT="${{ secrets.POSTGRES_PORT }}"
-            export POSTGRES_DB="${{ secrets.POSTGRES_DB }}"
-            export POSTGRES_USER="${{ secrets.POSTGRES_USER }}"
-            export POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}"
-            export TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}"
-            export OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
+            # Create .env file for docker-compose
+            cat > .env << 'ENV_EOF'
+DOCKER_IMAGE=$(echo "${{ needs.build.outputs.image-tag }}" | head -n1)
+POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
+POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}
+POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+ENV_EOF
 
             # Log in to GitHub Container Registry
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
