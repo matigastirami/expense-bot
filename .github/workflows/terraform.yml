@@ -106,7 +106,7 @@ jobs:
       - name: Update GitHub Secrets
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.EXPENSE_BOT_PAT }}
         run: |
           # Update LIGHTSAIL_HOST secret
           echo "Updating LIGHTSAIL_HOST secret..."
