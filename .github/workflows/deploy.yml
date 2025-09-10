@@ -89,6 +89,19 @@ jobs:
       - name: Initialize Terraform
         run: terraform init
 
+      - name: Refresh Terraform state
+        run: |
+          echo "🔄 Refreshing Terraform state to get latest infrastructure info..."
+          terraform refresh -auto-approve
+
+      - name: Show current Terraform state
+        run: |
+          echo "📋 Current Terraform resources:"
+          terraform state list
+          echo ""
+          echo "📊 Current outputs:"
+          terraform output
+
       - name: Get infrastructure info from Terraform state
         id: terraform-outputs
         run: |
