@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - "terraform/**"
-      - "docs/**"
-      - "*.md"
+      - "'terraform/**"'
+      - "'docs/**"'
+      - "'*.md"'
   workflow_dispatch:
 
 env:
@@ -41,18 +41,25 @@ jobs:
       image-digest: ${{ steps.build.outputs.digest }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+          - name: Checkout repository
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      uses: actions/checkout@v4
 
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          - name: Set up Docker Buildx
+
+      uses: docker/setup-buildx-action@v3
+
+          - name: Log in to Container Registry
+
+      uses: docker/login-action@v3
+
+      with:
+
+        registry: ${{ env.REGISTRY }}
+
+        username: ${{ github.actor }}
+
+        password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
@@ -63,6 +70,15 @@ jobs:
             type=ref,event=branch
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=sha,prefix=sha-
+          type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
         id: build
@@ -76,20 +92,39 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.prod
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
 
   deploy:
     needs: [build, check-infrastructure]
     runs-on: ubuntu-latest
     if: needs.check-infrastructure.outputs.infrastructure-ready == 'true'
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    defaults:
+      run:
+        working-directory: terraform
 
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+    steps:
+          - name: Checkout repository
+
+      uses: actions/checkout@v4
+
+          - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+
+        terraform_version: "~1.6"
+        terraform_wrapper: false
 
       - name: Configure SSH
         run: |
@@ -101,6 +136,12 @@ jobs:
           echo "  ConnectTimeout 30" >> ~/.ssh/config
           echo "  ServerAliveInterval 60" >> ~/.ssh/config
           chmod 600 ~/.ssh/config
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
 
       - name: Debug SSH Configuration
         env:
@@ -116,6 +157,8 @@ jobs:
           echo ""
           echo "Testing SSH port..."
           nc -zv ${HOST_IP} 22 || echo "SSH port not open"
+    - name: Initialize Terraform
+      run: terraform init
 
       - name: Wait for SSH availability
         env:
@@ -126,28 +169,143 @@ jobs:
           # First check if host is reachable
           if ! ping -c 1 ${HOST_IP} >/dev/null 2>&1; then
             echo "❌ Host ${HOST_IP} is not reachable"
+    - name: Get infrastructure info from Terraform state
+      id: terraform-outputs
+      run: |
+        echo "🔍 Fetching infrastructure info from Terraform state..."
+
+        # Get outputs from Terraform state
+        HOST_IP=$(terraform output -raw static_ip)
+        INSTANCE_NAME=$(terraform output -raw instance_name)
+        SSH_USERNAME=$(terraform output -raw instance_username)
+
+        # Validate outputs
+        if [[ -z "$HOST_IP" || "$HOST_IP" == "null" ]]; then
+          echo "❌ Could not get static IP from Terraform state"
+          echo "💡 Make sure Terraform infrastructure is deployed first"
+          exit 1
+        fi
+
+        echo "✅ Retrieved infrastructure info:"
+        echo "   Host IP: $HOST_IP"
+        echo "   Instance: $INSTANCE_NAME"
+        echo "   SSH User: $SSH_USERNAME"
+
+        # Set outputs for subsequent steps
+        echo "host-ip=$HOST_IP" >> $GITHUB_OUTPUT
+        echo "instance-name=$INSTANCE_NAME" >> $GITHUB_OUTPUT
+        echo "ssh-username=$SSH_USERNAME" >> $GITHUB_OUTPUT
+
+    - name: Get SSH private key from Terraform state
+      id: ssh-key
+      run: |
+        echo "🔑 Extracting SSH private key from Terraform state..."
+
+        # Extract private key and save to file
+        terraform output -raw private_key > /tmp/ssh-key.pem
+        chmod 600 /tmp/ssh-key.pem
+
+        # Validate key file
+        if [[ ! -s /tmp/ssh-key.pem ]]; then
+          echo "❌ SSH private key is empty or missing"
+          exit 1
+        fi
+
+        echo "✅ SSH private key extracted successfully"
+        echo "ssh-key-path=/tmp/ssh-key.pem" >> $GITHUB_OUTPUT
+
+    - name: Test SSH connectivity
+      env:
+        HOST_IP: ${{ steps.terraform-outputs.outputs.host-ip }}
+        SSH_KEY_PATH: ${{ steps.ssh-key.outputs.ssh-key-path }}
+        SSH_USERNAME: ${{ steps.terraform-outputs.outputs.ssh-username }}
+      run: |
+        echo "🔌 Testing SSH connectivity to ${HOST_IP}..."
+
+        # Configure SSH
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        echo "Host *" > ~/.ssh/config
+        echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+        echo "  UserKnownHostsFile /dev/null" >> ~/.ssh/config
+        echo "  ConnectTimeout 30" >> ~/.ssh/config
+        echo "  ServerAliveInterval 60" >> ~/.ssh/config
+        chmod 600 ~/.ssh/config
+
+        # Test network connectivity first
+        echo "📡 Testing network connectivity..."
+        if ! ping -c 3 ${HOST_IP}; then
+          echo "❌ Host ${HOST_IP} is not reachable via ping"
+          exit 1
+        fi
+
+        # Test SSH port
+        echo "🔐 Testing SSH port..."
+        if ! nc -zv ${HOST_IP} 22; then
+          echo "❌ SSH port 22 is not open on ${HOST_IP}"
+          exit 1
+        fi
+
+        # Test SSH connection with retries
+        echo "🔑 Testing SSH authentication..."
+        for i in {1..20}; do
+          echo "   SSH attempt $i/20..."
+          if ssh -i ${SSH_KEY_PATH} -o BatchMode=yes -o ConnectTimeout=10 ${SSH_USERNAME}@${HOST_IP} "echo 'SSH connection successful'; uptime" 2>/dev/null; then
+            echo "✅ SSH connection established successfully"
+            break
+          fi
+
+          if [ $i -eq 20 ]; then
+            echo "❌ SSH connection failed after 20 attempts"
+            echo "🔍 Debugging information:"
+            echo "   Host: ${HOST_IP}"
+            echo "   User: ${SSH_USERNAME}"
+            echo "   Key: ${SSH_KEY_PATH}"
+
+            # Try verbose SSH for debugging
+            echo "🔍 Verbose SSH attempt:"
+            ssh -i ${SSH_KEY_PATH} -vvv -o BatchMode=yes -o ConnectTimeout=10 ${SSH_USERNAME}@${HOST_IP} "echo 'test'" || true
             exit 1
           fi
 
-          # Wait for SSH with better error reporting
-          for i in {1..40}; do
-            echo "   Attempting SSH connection... ($i/40)"
-            if ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 ubuntu@${HOST_IP} "echo 'SSH connection successful'; uptime" 2>/dev/null; then
-              echo "✅ SSH connection established successfully"
-              break
-            fi
+          sleep 15
+        done
 
             # Check if we're at the last attempt
             if [ $i -eq 40 ]; then
               echo "❌ SSH connection failed after 40 attempts (6+ minutes)"
               echo "🔍 Final diagnostic attempts..."
+    - name: Deploy to Lightsail
+      env:
+        HOST_IP: ${{ steps.terraform-outputs.outputs.host-ip }}
+        SSH_KEY_PATH: ${{ steps.ssh-key.outputs.ssh-key-path }}
+        SSH_USERNAME: ${{ steps.terraform-outputs.outputs.ssh-username }}
+        DOCKER_IMAGE: ${{ needs.build.outputs.image-tag }}
+        POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+        POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+        POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_ACTOR: ${{ github.actor }}
+      working-directory: .
+      run: |
+        # Extract first image tag
+        IMAGE_TAG=$(echo "${DOCKER_IMAGE}" | head -n1)
+        echo "🚢 Deploying image: ${IMAGE_TAG}"
 
-              # Try to get more info about the connection failure
+                      # Try to get
+         more info about the connection failure
               echo "Testing telnet to SSH port:"
-              timeout 5 telnet ${HOST_IP} 22 || echo "Telnet to port 22 failed"
+              timeout 5 telnet -i ${SSH_KEY_PATH} ${SSH_USERNAME}${HOST_IP} 22 || echo "Telnet to port 22 failed${SSH_USERNAME}${SSH_USERNAME}"
 
-              echo "Checking SSH key fingerprint:"
-              ssh-keyscan ${HOST_IP} || echo "SSH keyscan failed"
+
+        echo "Checking SSH key fingerprint:"
+              ssh
+         -i ${SSH_KEY_PATH}-keyscan ${SSH_USERNAME}${HOST_IP}
+         -i ${SSH_KEY_PATH} || echo "SSH keyscan failed"${SSH_USERNAME}
 
               echo "❌ Deployment failed due to SSH connectivity issues"
               echo "💡 Possible solutions:"
@@ -156,8 +314,27 @@ jobs:
               echo "   3. Verify SSH key and host secrets are correctly set"
               exit 1
             fi
+        # Execute deployment
+        echo "🚀 Executing deployment..."
+        ssh -i ${SSH_KEY_PATH} ${SSH_USERNAME}@${HOST_IP} "cd /opt/expense-tracker && chmod +x deploy.sh && \
+          DOCKER_IMAGE='${IMAGE_TAG}' \
+          POSTGRES_HOST='${POSTGRES_HOST}' \
+          POSTGRES_PORT='${POSTGRES_PORT}' \
+          POSTGRES_DB='${POSTGRES_DB}' \
+          POSTGRES_USER='${POSTGRES_USER}' \
+          POSTGRES_PASSWORD='${POSTGRES_PASSWORD}' \
+          TELEGRAM_BOT_TOKEN='${TELEGRAM_BOT_TOKEN}' \
+          OPENAI_API_KEY='${OPENAI_API_KEY}' \
+          GITHUB_TOKEN='${GITHUB_TOKEN}' \
+          GITHUB_ACTOR='${GITHUB_ACTOR}' \
+          ./deploy.sh"
 
-            sleep 10
+
+
+        stepsterraform-outputs.outputs.host-ip
+
+
+        sleep 10
           done
 
       - name: Deploy to Lightsail
@@ -177,6 +354,19 @@ jobs:
           # Extract first image tag
           IMAGE_TAG=$(echo "${DOCKER_IMAGE}" | head -n1)
           echo "🚢 Deploying image: ${IMAGE_TAG}"
+        # Check if the health endpoint responds
+        echo "🏥 Testing health endpoint..."
+        if curl -f http://${HOST_IP}:8000/health; then
+          echo "✅ Deployment successful - health check passed"
+        else
+          echo "❌ Deployment failed - health check failed"
+
+          # Get some debugging info
+          echo "🔍 Debugging deployment failure..."
+          ssh -i ${{ steps.ssh-key.outputs.ssh-key-path }} ${{ steps.terraform-outputs.outputs.ssh-username }}@${HOST_IP} "cd /opt/expense-tracker && docker-compose ps && docker-compose logs --tail=50" || true
+
+          exit 1
+        fi
 
           # Ensure directory exists
           ssh ubuntu@${HOST_IP} "sudo mkdir -p /opt/expense-tracker && sudo chown ubuntu:ubuntu /opt/expense-tracker"
@@ -243,3 +433,16 @@ jobs:
           echo "   3. This will create the Lightsail instance and set up secrets"
           echo ""
           echo "Or trigger it by making a change to terraform/ files and pushing"
+    - name: Notify deployment status
+      env:
+        HOST_IP: ${{ steps.terraform-outputs.outputs.host-ip }}
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "🚀 Deployment to Lightsail completed successfully!"
+          echo "🔗 Health check: http://${HOST_IP}:8000/health"
+          echo "📊 Instance: ${{ steps.terraform-outputs.outputs.instance-name }}"
+        else
+          echo "💥 Deployment failed!"
+          echo "🔍 Check the logs above for debugging information"
+        fi
