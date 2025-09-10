@@ -22,6 +22,46 @@ EOF
 
 echo "✅ Environment file created"
 
+# Check if Docker is installed and running
+echo "🔍 Checking Docker installation..."
+if ! command -v docker >/dev/null 2>&1; then
+    echo "❌ Docker not found. Installing Docker..."
+
+    # Install Docker
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    sudo usermod -aG docker ubuntu
+    rm get-docker.sh
+
+    # Start Docker service
+    sudo systemctl enable docker
+    sudo systemctl start docker
+
+    echo "✅ Docker installed successfully"
+else
+    echo "✅ Docker is already installed"
+fi
+
+# Ensure Docker service is running
+if ! sudo systemctl is-active --quiet docker; then
+    echo "🔄 Starting Docker service..."
+    sudo systemctl start docker
+fi
+
+# Wait for Docker to be ready
+echo "⏳ Waiting for Docker to be ready..."
+for i in {1..30}; do
+    if docker info >/dev/null 2>&1; then
+        echo "✅ Docker is ready"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "❌ Docker failed to start after 30 attempts"
+        exit 1
+    fi
+    sleep 2
+done
+
 # Log in to GitHub Container Registry
 echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
