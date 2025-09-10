@@ -27,16 +27,25 @@ echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-st
 
 echo "✅ Logged in to container registry"
 
+# Check which docker compose command is available
+if command -v docker-compose >/dev/null 2>&1; then
+    DOCKER_COMPOSE="docker-compose"
+else
+    DOCKER_COMPOSE="docker compose"
+fi
+
+echo "Using Docker Compose command: ${DOCKER_COMPOSE}"
+
 # Pull the new image
-docker compose pull
+${DOCKER_COMPOSE} pull
 
 echo "✅ Pulled new image"
 
 # Stop and remove old containers
-docker compose down || true
+${DOCKER_COMPOSE} down || true
 
 # Start new containers
-docker compose up -d
+${DOCKER_COMPOSE} up -d
 
 echo "✅ Started containers"
 
