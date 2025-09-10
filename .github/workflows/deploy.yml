@@ -92,7 +92,7 @@ jobs:
       - name: Refresh Terraform state
         run: |
           echo "🔄 Refreshing Terraform state to get latest infrastructure info..."
-          terraform refresh -auto-approve
+          terraform refresh -input=false
 
       - name: Show current Terraform state
         run: |
