@@ -14,6 +14,22 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  check-infrastructure:
+    runs-on: ubuntu-latest
+    outputs:
+      infrastructure-ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Check if infrastructure secrets exist
+        id: check
+        run: |
+          if [[ -n "${{ secrets.LIGHTSAIL_HOST }}" && -n "${{ secrets.LIGHTSAIL_SSH_KEY }}" ]]; then
+            echo "ready=true" >> $GITHUB_OUTPUT
+            echo "✅ Infrastructure secrets are available"
+          else
+            echo "ready=false" >> $GITHUB_OUTPUT
+            echo "❌ Infrastructure secrets missing. Run Terraform first."
+          fi
+
   build:
     runs-on: ubuntu-latest
     permissions:
@@ -62,8 +78,9 @@ jobs:
           platforms: linux/amd64
 
   deploy:
-    needs: build
+    needs: [build, check-infrastructure]
     runs-on: ubuntu-latest
+    if: needs.check-infrastructure.outputs.infrastructure-ready == 'true'
 
     steps:
       - name: Checkout repository
@@ -85,25 +102,63 @@ jobs:
           echo "  ServerAliveInterval 60" >> ~/.ssh/config
           chmod 600 ~/.ssh/config
 
+      - name: Debug SSH Configuration
+        env:
+          HOST_IP: ${{ secrets.LIGHTSAIL_HOST }}
+        run: |
+          echo "🔍 Debugging SSH connection..."
+          echo "Host IP: ${HOST_IP}"
+          echo "SSH Agent status:"
+          ssh-add -l || echo "No SSH keys loaded"
+          echo ""
+          echo "Testing network connectivity..."
+          ping -c 3 ${HOST_IP} || echo "Host unreachable"
+          echo ""
+          echo "Testing SSH port..."
+          nc -zv ${HOST_IP} 22 || echo "SSH port not open"
+
       - name: Wait for SSH availability
         env:
           HOST_IP: ${{ secrets.LIGHTSAIL_HOST }}
         run: |
           echo "🔌 Waiting for SSH to become available on ${HOST_IP}..."
-          for i in {1..30}; do
-            if ssh -o BatchMode=yes -o ConnectTimeout=5 ubuntu@${HOST_IP} "echo 'SSH connection successful'" 2>/dev/null; then
-              echo "✅ SSH connection established"
-              break
-            fi
-            echo "   Waiting for SSH... ($i/30)"
-            sleep 10
-          done
 
-          # Final test
-          if ! ssh -o BatchMode=yes -o ConnectTimeout=5 ubuntu@${HOST_IP} "echo 'SSH ready'" 2>/dev/null; then
-            echo "❌ SSH connection failed after 5 minutes"
+          # First check if host is reachable
+          if ! ping -c 1 ${HOST_IP} >/dev/null 2>&1; then
+            echo "❌ Host ${HOST_IP} is not reachable"
             exit 1
           fi
+
+          # Wait for SSH with better error reporting
+          for i in {1..40}; do
+            echo "   Attempting SSH connection... ($i/40)"
+            if ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 ubuntu@${HOST_IP} "echo 'SSH connection successful'; uptime" 2>/dev/null; then
+              echo "✅ SSH connection established successfully"
+              break
+            fi
+
+            # Check if we're at the last attempt
+            if [ $i -eq 40 ]; then
+              echo "❌ SSH connection failed after 40 attempts (6+ minutes)"
+              echo "🔍 Final diagnostic attempts..."
+
+              # Try to get more info about the connection failure
+              echo "Testing telnet to SSH port:"
+              timeout 5 telnet ${HOST_IP} 22 || echo "Telnet to port 22 failed"
+
+              echo "Checking SSH key fingerprint:"
+              ssh-keyscan ${HOST_IP} || echo "SSH keyscan failed"
+
+              echo "❌ Deployment failed due to SSH connectivity issues"
+              echo "💡 Possible solutions:"
+              echo "   1. Run the Terraform workflow to ensure infrastructure exists"
+              echo "   2. Check if the Lightsail instance is running"
+              echo "   3. Verify SSH key and host secrets are correctly set"
+              exit 1
+            fi
+
+            sleep 10
+          done
 
       - name: Deploy to Lightsail
         env:
@@ -172,3 +227,19 @@ jobs:
           else
             echo "💥 Deployment failed!"
           fi
+
+  infrastructure-warning:
+    needs: check-infrastructure
+    runs-on: ubuntu-latest
+    if: needs.check-infrastructure.outputs.infrastructure-ready == 'false'
+    steps:
+      - name: Infrastructure Warning
+        run: |
+          echo "⚠️ Cannot deploy: Infrastructure secrets are missing"
+          echo ""
+          echo "🔧 To fix this, run the Terraform workflow first:"
+          echo "   1. Go to Actions tab"
+          echo "   2. Run 'Terraform Infrastructure' workflow"
+          echo "   3. This will create the Lightsail instance and set up secrets"
+          echo ""
+          echo "Or trigger it by making a change to terraform/ files and pushing"
