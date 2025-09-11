@@ -22,9 +22,21 @@ services:
       - 2001:4860:4860::8844
       - 8.8.8.8
       - 8.8.4.4
+    networks:
+      - app-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+networks:
+  app-network:
+    enable_ipv6: true
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+        - subnet: 2001:db8:1::/64
