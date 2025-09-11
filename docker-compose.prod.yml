@@ -17,9 +17,18 @@ services:
       - "8000:8000"
     volumes:
       - ./logs:/app/logs
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+networks:
+  default:
+    enable_ipv6: false
