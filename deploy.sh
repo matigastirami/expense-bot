@@ -51,27 +51,42 @@ fi
 # Wait for Docker to be ready
 echo "⏳ Waiting for Docker to be ready..."
 for i in {1..30}; do
-    if docker info >/dev/null 2>&1; then
+    # Try with sudo first since user might not be in docker group yet
+    if sudo docker info >/dev/null 2>&1; then
         echo "✅ Docker is ready"
         break
     fi
     if [ $i -eq 30 ]; then
         echo "❌ Docker failed to start after 30 attempts"
+        # Show docker service status for debugging
+        sudo systemctl status docker --no-pager || true
         exit 1
     fi
     sleep 2
 done
 
+# Since we might have just installed Docker, use sudo for docker commands
+# or refresh group membership
+if groups | grep -q docker; then
+    echo "✅ User is in docker group"
+    DOCKER_CMD="docker"
+else
+    echo "⚠️  User not in docker group yet, using sudo"
+    DOCKER_CMD="sudo docker"
+fi
+
 # Log in to GitHub Container Registry
-echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+echo "${GITHUB_TOKEN}" | ${DOCKER_CMD} login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
 echo "✅ Logged in to container registry"
 
 # Check which docker compose command is available
 if command -v docker-compose >/dev/null 2>&1; then
     DOCKER_COMPOSE="docker-compose"
-else
+elif groups | grep -q docker; then
     DOCKER_COMPOSE="docker compose"
+else
+    DOCKER_COMPOSE="sudo docker compose"
 fi
 
 echo "Using Docker Compose command: ${DOCKER_COMPOSE}"
@@ -101,6 +116,6 @@ for i in {1..30}; do
 done
 
 # Cleanup old images
-docker image prune -f
+${DOCKER_CMD} image prune -f
 
 echo "🎉 Deployment completed successfully!"
