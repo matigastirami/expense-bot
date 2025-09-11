@@ -8,8 +8,18 @@ echo "🚀 Starting deployment..."
 # Navigate to application directory
 cd /opt/expense-tracker
 
-# Create .env file with environment variables
-cat > .env << 'EOF'
+# Export environment variables explicitly
+export DOCKER_IMAGE="${DOCKER_IMAGE}"
+export POSTGRES_HOST="${POSTGRES_HOST}"
+export POSTGRES_PORT="${POSTGRES_PORT}"
+export POSTGRES_DB="${POSTGRES_DB}"
+export POSTGRES_USER="${POSTGRES_USER}"
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
+export TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN}"
+export OPENAI_API_KEY="${OPENAI_API_KEY}"
+
+# Create .env file with environment variables as backup
+cat > .env << EOF
 DOCKER_IMAGE=${DOCKER_IMAGE}
 POSTGRES_HOST=${POSTGRES_HOST}
 POSTGRES_PORT=${POSTGRES_PORT}
@@ -18,9 +28,17 @@ POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 OPENAI_API_KEY=${OPENAI_API_KEY}
+FX_PRIMARY=coingecko
+ARS_SOURCE=blue
 EOF
 
-echo "✅ Environment file created"
+echo "✅ Environment variables exported and .env file created"
+
+# Debug: Show that variables are set
+echo "🔍 Verifying environment variables:"
+echo "   DOCKER_IMAGE: ${DOCKER_IMAGE:0:50}..."
+echo "   POSTGRES_HOST: ${POSTGRES_HOST}"
+echo "   TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:0:10}..."
 
 # Check if Docker is installed and running
 echo "🔍 Checking Docker installation..."
