@@ -36,13 +36,9 @@ def upgrade() -> None:
     # First clear any existing data to avoid casting issues
     op.execute("DELETE FROM pending_transactions")
 
-    # Alter user_id column from String to Integer
-    op.alter_column('pending_transactions', 'user_id',
-                   type_=sa.Integer(),
-                   nullable=False,
-                   existing_type=sa.String(50),
-                   existing_nullable=True,
-                   postgresql_using='user_id::integer')
+    # Alter user_id column from String to Integer using raw SQL
+    op.execute("ALTER TABLE pending_transactions ALTER COLUMN user_id TYPE INTEGER USING user_id::integer")
+    op.execute("ALTER TABLE pending_transactions ALTER COLUMN user_id SET NOT NULL")
 
     # Add foreign key constraint
     op.create_foreign_key('fk_pending_transactions_user_id',
