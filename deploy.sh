@@ -1,12 +1,12 @@
 #!/bin/bash
 set -e
 
-# This script runs on the Lightsail server to deploy the app
+# This script runs on the DigitalOcean droplet to deploy the app
 
 echo "🚀 Starting deployment..."
 
 # Navigate to application directory
-cd /opt/expense-tracker
+cd /root/expense-tracker-claude
 
 # Export environment variables explicitly
 export DOCKER_IMAGE="${DOCKER_IMAGE}"
@@ -48,7 +48,7 @@ if ! command -v docker >/dev/null 2>&1; then
     # Install Docker
     curl -fsSL https://get.docker.com -o get-docker.sh
     sudo sh get-docker.sh
-    sudo usermod -aG docker ubuntu
+    usermod -aG docker root
     rm get-docker.sh
 
     # Start Docker service
@@ -61,9 +61,9 @@ else
 fi
 
 # Ensure Docker service is running
-if ! sudo systemctl is-active --quiet docker; then
+if ! systemctl is-active --quiet docker; then
     echo "🔄 Starting Docker service..."
-    sudo systemctl start docker
+    systemctl start docker
 fi
 
 # Wait for Docker to be ready

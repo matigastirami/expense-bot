@@ -1,85 +1,81 @@
 terraform {
   required_version = ">= 1.0"
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
+    digitalocean = {
+      source  = "digitalocean/digitalocean"
+      version = "~> 2.0"
     }
   }
 
-  backend "s3" {
-    bucket = "expense-bot-tf-state"
-    key    = "infrastructure/terraform.tfstate"
-    region = "us-east-1"
+  backend "local" {
+    path = "terraform.tfstate"
   }
 }
 
-provider "aws" {
-  region = var.aws_region
+provider "digitalocean" {
+  token = var.do_token
 }
 
-# SSH Key Pair for instance access
-resource "aws_lightsail_key_pair" "main" {
-  name = "${var.project_name}-key"
+# SSH Key (commented out for import - you can add later)
+# resource "digitalocean_ssh_key" "main" {
+#   name       = "${var.project_name}-key"
+#   public_key = var.ssh_public_key
+# }
+
+# Droplet (this will represent your existing droplet)
+resource "digitalocean_droplet" "main" {
+  image      = "ubuntu-24-04-x64"
+  name       = "expensegram-bot"
+  region     = "nyc3"
+  size       = "s-1vcpu-1gb"
+  monitoring = true
+
+  # ssh_keys = [digitalocean_ssh_key.main.fingerprint]  # Commented out for import
+
+  # user_data = file("${path.module}/user_data.sh")  # Commented out for import
+
+  tags = ["${var.project_name}", var.environment]
 }
 
-# Lightsail instance
-resource "aws_lightsail_instance" "main" {
-  name              = var.instance_name
-  availability_zone = "${var.aws_region}a"
-  blueprint_id      = "ubuntu_22_04"
-  bundle_id         = "nano_2_0" # $3.50/month - 1 vCPU, 512 MB RAM, 20 GB SSD
-  key_pair_name     = aws_lightsail_key_pair.main.name
+# Firewall
+resource "digitalocean_firewall" "main" {
+  name = "${var.project_name}-firewall"
 
-  user_data = file("${path.module}/user_data.sh")
+  droplet_ids = [digitalocean_droplet.main.id]
 
-  tags = {
-    Name        = var.instance_name
-    Environment = var.environment
-    Project     = var.project_name
-  }
-}
-
-# Static IP
-resource "aws_lightsail_static_ip" "main" {
-  name = "${var.project_name}-static-ip"
-}
-
-# Attach static IP to instance
-resource "aws_lightsail_static_ip_attachment" "main" {
-  static_ip_name = aws_lightsail_static_ip.main.name
-  instance_name  = aws_lightsail_instance.main.name
-}
-
-# Open firewall ports
-resource "aws_lightsail_instance_public_ports" "main" {
-  instance_name = aws_lightsail_instance.main.name
-
-  port_info {
-    protocol  = "tcp"
-    from_port = 22
-    to_port   = 22
-    cidrs     = ["0.0.0.0/0"] # SSH access
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "22"
+    source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  port_info {
-    protocol  = "tcp"
-    from_port = 80
-    to_port   = 80
-    cidrs     = ["0.0.0.0/0"] # HTTP
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "80"
+    source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  port_info {
-    protocol  = "tcp"
-    from_port = 443
-    to_port   = 443
-    cidrs     = ["0.0.0.0/0"] # HTTPS
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "443"
+    source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  port_info {
-    protocol  = "tcp"
-    from_port = 8000
-    to_port   = 8000
-    cidrs     = ["0.0.0.0/0"] # Bot health check port
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "8000"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  outbound_rule {
+    protocol              = "udp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
   }
 }

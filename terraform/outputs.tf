@@ -1,35 +1,39 @@
-output "instance_name" {
-  description = "Name of the Lightsail instance"
-  value       = aws_lightsail_instance.main.name
+output "droplet_name" {
+  description = "Name of the DigitalOcean droplet"
+  value       = digitalocean_droplet.main.name
 }
 
-output "static_ip" {
-  description = "Static IP address of the instance"
-  value       = aws_lightsail_static_ip.main.ip_address
+output "droplet_ip" {
+  description = "Public IP address of the droplet"
+  value       = digitalocean_droplet.main.ipv4_address
 }
 
-output "ssh_key_name" {
-  description = "Name of the SSH key pair"
-  value       = aws_lightsail_key_pair.main.name
+output "droplet_id" {
+  description = "ID of the DigitalOcean droplet"
+  value       = digitalocean_droplet.main.id
 }
 
-output "private_key" {
-  description = "Private SSH key for instance access"
-  value       = aws_lightsail_key_pair.main.private_key
-  sensitive   = true
-}
+# output "ssh_key_name" {
+#   description = "Name of the SSH key"
+#   value       = digitalocean_ssh_key.main.name
+# }
 
-output "public_key" {
-  description = "Public SSH key"
-  value       = aws_lightsail_key_pair.main.public_key
-}
+# output "ssh_key_fingerprint" {
+#   description = "Fingerprint of the SSH key"
+#   value       = digitalocean_ssh_key.main.fingerprint
+# }
 
 output "instance_username" {
   description = "Username for SSH access"
-  value       = "ubuntu"
+  value       = "root"
 }
 
 output "health_check_url" {
   description = "Health check URL for the bot"
-  value       = "http://${aws_lightsail_static_ip.main.ip_address}:8000/health"
+  value       = "http://${digitalocean_droplet.main.ipv4_address}:8000/health"
+}
+
+output "firewall_id" {
+  description = "ID of the firewall"
+  value       = digitalocean_firewall.main.id
 }
