@@ -32,6 +32,23 @@ def upgrade() -> None:
     )
     op.create_index('ix_users_telegram_user_id', 'users', ['telegram_user_id'])
 
+    # Fix pending_transactions user_id column type and add FK constraint
+    # First clear any existing data to avoid casting issues
+    op.execute("DELETE FROM pending_transactions")
+
+    # Alter user_id column from String to Integer
+    op.alter_column('pending_transactions', 'user_id',
+                   type_=sa.Integer(),
+                   nullable=False,
+                   existing_type=sa.String(50),
+                   existing_nullable=True,
+                   postgresql_using='user_id::integer')
+
+    # Add foreign key constraint
+    op.create_foreign_key('fk_pending_transactions_user_id',
+                         'pending_transactions', 'users',
+                         ['user_id'], ['id'])
+
 
 def downgrade() -> None:
     op.drop_table('users')
