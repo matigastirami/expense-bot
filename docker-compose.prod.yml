@@ -1,6 +1,6 @@
 services:
   app:
-    image: ${DOCKER_IMAGE}
+    build: .
     container_name: expense-tracker-bot
     restart: unless-stopped
     environment:
