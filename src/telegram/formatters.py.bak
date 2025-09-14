@@ -15,7 +15,7 @@ def format_balances_telegram(balances: List[BalanceInfo]) -> str:
             accounts[balance.account_name] = []
         accounts[balance.account_name].append(balance)
     
-    lines = ["💰 <b>Account Balances:</b>", ""]
+    lines = ["💰 **Account Balances:**", ""]
     for account_name, account_balances in accounts.items():
         if len(account_balances) == 1:
             balance = account_balances[0]
@@ -34,7 +34,7 @@ def format_transactions_telegram(transactions: List[TransactionInfo], title: str
     if not transactions:
         return f"📋 No {title.lower()} found."
     
-    lines = [f"📋 <b>{title}:</b>", ""]
+    lines = [f"📋 **{title}:**", ""]
     
     for t in transactions:
         emoji = {"income": "💰", "expense": "💸", "transfer": "🔄", "conversion": "💱"}.get(t.type, "📝")

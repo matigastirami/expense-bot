@@ -14,7 +14,7 @@ def detect_language(text: str) -> LanguageCode:
     Returns 'es' for Spanish, 'en' for English (default).
     """
     text_lower = text.lower().strip()
-    
+
     # Spanish indicators (high confidence)
     spanish_indicators = [
         # Common Spanish words
@@ -27,13 +27,13 @@ def detect_language(text: str) -> LanguageCode:
         # Simple greetings and common words
         'hola', 'gracias', 'por favor', 'sí', 'no', 'bueno', 'bien',
         'adiós', 'hasta', 'luego', 'disculpe', 'perdón',
-        
+
         # Common Spanish phrases
         'en efectivo', 'mi cuenta', 'la cuenta', 'el banco', 'los últimos',
         'la semana', 'el mes', 'esta semana', 'este mes', 'el año',
         'de mi', 'en mi', 'desde mi', 'hacia mi', 'para mi'
     ]
-    
+
     # English indicators (high confidence)
     english_indicators = [
         # Common English words specific to financial context
@@ -43,29 +43,29 @@ def detect_language(text: str) -> LanguageCode:
         'yesterday', 'today', 'tomorrow', 'dollars', 'cash', 'wallet',
         'largest', 'biggest', 'total', 'expenses', 'income', 'savings'
     ]
-    
+
     # Count Spanish indicators
     spanish_score = 0
     for indicator in spanish_indicators:
         if indicator in text_lower:
             spanish_score += 1
-    
-    # Count English indicators  
+
+    # Count English indicators
     english_score = 0
     for indicator in english_indicators:
         if indicator in text_lower:
             english_score += 1
-    
+
     # Spanish accented characters are a strong indicator
     if re.search(r'[áéíóúüñ¿¡]', text_lower):
         spanish_score += 2
-    
+
     # Question patterns
     if text_lower.startswith('¿') or '¿' in text_lower:
         spanish_score += 2
     elif text_lower.startswith(('how', 'what', 'when', 'where', 'why', 'show')):
         english_score += 1
-    
+
     # Verb conjugations (Spanish has more complex patterns)
     spanish_verb_patterns = [
         r'\b\w+é\b',      # -é endings (gasté, compré, etc.)
@@ -73,11 +73,11 @@ def detect_language(text: str) -> LanguageCode:
         r'\b\w+aste\b',   # -aste endings
         r'\b\w+ó\b',      # -ó endings
     ]
-    
+
     for pattern in spanish_verb_patterns:
         if re.search(pattern, text_lower):
             spanish_score += 1
-    
+
     # Default to Spanish if more Spanish indicators, otherwise English
     return "es" if spanish_score > english_score else "en"
 
@@ -88,21 +88,21 @@ def validate_supported_language(text: str) -> tuple[bool, LanguageCode | None]:
     Returns (is_supported, language_code).
     """
     detected_lang = detect_language(text)
-    
+
     # Check for unsupported language indicators (excluding Spanish/English special chars)
     # Allow Latin basic + Latin-1 supplement + Latin Extended-A (covers Spanish accents)
     unsupported_pattern = r'[^\x00-\x7F\u00A0-\u017F\u2000-\u206F\u20A0-\u20CF\u2100-\u214F]'
     if re.search(unsupported_pattern, text):
         # Contains characters outside supported ranges
         return False, None
-    
+
     # Spanish and English are both supported
     return True, detected_lang
 
 
 class Messages:
     """Localized message templates."""
-    
+
     ERROR_MESSAGES = {
         "en": {
             "transaction_error": "❌ Error registering transaction: {error}",
@@ -127,7 +127,7 @@ class Messages:
             "no_balance_account": "❌ No se encontró balance para la cuenta: {account}",
         }
     }
-    
+
     SUCCESS_MESSAGES = {
         "en": {
             "income_registered": "✅ Income registered: +{amount:,.0f} {currency}",
@@ -142,27 +142,27 @@ class Messages:
             "conversion_registered": "✅ Conversión registrada: {amount:,.0f} {currency}",
         }
     }
-    
+
     CONFIRMATION_MESSAGES = {
         "en": {
-            "transaction_confirmation": "🔔 **Transaction Confirmation**\n\n**Type:** {type_icon} {type_name}\n**Amount:** {amount:,.0f} {currency}\n**From:** {account_from}\n**To:** {account_to}\n**Description:** {description}\n\nDo you confirm this transaction?",
+            "transaction_confirmation": "🔔 <b>Transaction Confirmation</b>\n\n<b>Type:</b> {type_icon} {type_name}\n<b>Amount:</b> {amount:,.0f} {currency}\n<b>From:</b> {account_from}\n<b>To:</b> {account_to}\n<b>Description:</b> {description}\n\nDo you confirm this transaction?",
         },
         "es": {
-            "transaction_confirmation": "🔔 **Confirmación de transacción**\n\n**Tipo:** {type_icon} {type_name}\n**Monto:** {amount:,.0f} {currency}\n**Desde:** {account_from}\n**Hacia:** {account_to}\n**Descripción:** {description}\n\n¿Confirmas esta transacción?",
+            "transaction_confirmation": "🔔 <b>Confirmación de transacción</b>\n\n<b>Tipo:</b> {type_icon} {type_name}\n<b>Monto:</b> {amount:,.0f} {currency}\n<b>Desde:</b> {account_from}\n<b>Hacia:</b> {account_to}\n<b>Descripción:</b> {description}\n\n¿Confirmas esta transacción?",
         }
     }
-    
+
     HELP_MESSAGES = {
         "en": {
             "general_help": """
 I'm your personal finance AI assistant! I can help you with:
 
-💰 **Recording transactions** (in Spanish or English):
+💰 <b>Recording transactions</b> (in Spanish or English):
 • "I received 6000 USD in my Deel account"
 • "I spent 400 ARS at the supermarket"
 • "I transferred 1000 USD to Astropay"
 
-📊 **Checking balances and reports**:
+📊 <b>Checking balances and reports</b>:
 • "How much do I have in my Deel account?"
 • "Show my balance in Astropay"
 • "/balance" - See all balances
@@ -175,12 +175,12 @@ Try describing a financial transaction or asking about your accounts!
             "general_help": """
 ¡Soy tu asistente de finanzas personales con IA! Te puedo ayudar con:
 
-💰 **Registrar transacciones** (en español o inglés):
+💰 <b>Registrar transacciones</b> (en español o inglés):
 • "Recibí 6000 USD en mi cuenta de Deel"
 • "Gasté 400 ARS en el supermercado"
 • "Transferí 1000 USD a Astropay"
 
-📊 **Consultar balances y reportes**:
+📊 <b>Consultar balances y reportes</b>:
 • "¿Cuánto tengo en mi cuenta Deel?"
 • "Muestra mi balance en Astropay"
 • "/balance" - Ver todos los balances
@@ -196,7 +196,7 @@ Try describing a financial transaction or asking about your accounts!
         """Get a localized message with formatting."""
         messages = getattr(cls, category.upper() + "_MESSAGES", {})
         template = messages.get(lang, {}).get(key, messages.get("en", {}).get(key, ""))
-        
+
         if template and kwargs:
             try:
                 return template.format(**kwargs)

@@ -588,25 +588,25 @@ class FinanceAgent:
             # Amount
             amount = transaction_data['amount']
             currency = transaction_data['currency']
-            lines.append(f"<b>Monto:</b> {amount:,.0f} {currency}")
+            lines.append(f"**Monto:** {amount:,.0f} {currency}")
 
             # Accounts
             if transaction_data['account_from']:
-                lines.append(f"<b>Desde:</b> {transaction_data['account_from']}")
+                lines.append(f"**Desde:** {transaction_data['account_from']}")
             if transaction_data['account_to']:
-                lines.append(f"<b>Hacia:</b> {transaction_data['account_to']}")
+                lines.append(f"**Hacia:** {transaction_data['account_to']}")
 
             # For conversions
             if transaction_data['currency_to'] and transaction_data['amount_to']:
-                lines.append(f"<b>Resultado:</b> {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}")
+                lines.append(f"**Resultado:** {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}")
                 if transaction_data['exchange_rate']:
-                    lines.append(f"<b>Tasa:</b> {transaction_data['exchange_rate']:,.2f}")
+                    lines.append(f"**Tasa:** {transaction_data['exchange_rate']:,.2f}")
 
             # Description
-            lines.append(f"<b>Descripción:</b> {transaction_data['description']}")
+            lines.append(f"**Descripción:** {transaction_data['description']}")
 
         else:  # English
-            lines = ["🔔 <b>Transaction Confirmation</b>", ""]
+            lines = ["🔔 **Transaction Confirmation**", ""]
 
             # Transaction type
             type_map = {
@@ -615,31 +615,31 @@ class FinanceAgent:
                 "transfer": "🔄 Transfer",
                 "conversion": "💱 Conversion"
             }
-            lines.append(f"<b>Type:</b> {type_map.get(transaction_data['transaction_type'], 'Transaction')}")
+            lines.append(f"**Type:** {type_map.get(transaction_data['transaction_type'], 'Transaction')}")
 
             # Amount
             amount = transaction_data['amount']
             currency = transaction_data['currency']
-            lines.append(f"<b>Amount:</b> {amount:,.0f} {currency}")
+            lines.append(f"**Amount:** {amount:,.0f} {currency}")
 
             # Accounts
             if transaction_data['account_from']:
-                lines.append(f"<b>From:</b> {transaction_data['account_from']}")
+                lines.append(f"**From:** {transaction_data['account_from']}")
             if transaction_data['account_to']:
-                lines.append(f"<b>To:</b> {transaction_data['account_to']}")
+                lines.append(f"**To:** {transaction_data['account_to']}")
 
             # For conversions
             if transaction_data['currency_to'] and transaction_data['amount_to']:
-                lines.append(f"<b>Result:</b> {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}")
+                lines.append(f"**Result:** {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}")
                 if transaction_data['exchange_rate']:
-                    lines.append(f"<b>Rate:</b> {transaction_data['exchange_rate']:,.2f}")
+                    lines.append(f"**Rate:** {transaction_data['exchange_rate']:,.2f}")
 
             # Description
-            lines.append(f"<b>Description:</b> {transaction_data['description']}")
+            lines.append(f"**Description:** {transaction_data['description']}")
 
         # Date
         if transaction_data['date']:
-            date_label = "<b>Fecha:</b>" if lang == 'es' else "<b>Date:</b>"
+            date_label = "**Fecha:**" if lang == 'es' else "**Date:**"
             lines.append(f"{date_label} {transaction_data['date'].strftime('%d/%m/%Y')}")
 
         # Confirmation question
@@ -769,12 +769,12 @@ class FinanceAgent:
                         return f"💰 No tuviste gastos {date_str}"
                     else:
                         currency = transactions[0].currency if transactions else "USD"
-                        response = f"💸 <b>Gastos {date_str}:</b>\n"
-                        response += f"<b>Total:</b> {total:,.2f} {currency}\n"
-                        response += f"<b>Transacciones:</b> {len(transactions)}\n"
+                        response = f"💸 **Gastos {date_str}:**\n"
+                        response += f"**Total:** {total:,.2f} {currency}\n"
+                        response += f"**Transacciones:** {len(transactions)}\n"
 
                         if len(transactions) <= 5:
-                            response += "\n📋 <b>Detalle:</b>\n"
+                            response += "\n📋 **Detalle:**\n"
                             for tx in transactions:
                                 account_info = f" desde {tx.account_from}" if tx.account_from else ""
                                 response += f"• {tx.amount:,.2f} {tx.currency}{account_info} - {tx.description or 'Sin descripción'}\n"
@@ -785,12 +785,12 @@ class FinanceAgent:
                         return f"💰 No tuviste ingresos {date_str}"
                     else:
                         currency = transactions[0].currency if transactions else "USD"
-                        response = f"💰 <b>Ingresos {date_str}:</b>\n"
-                        response += f"<b>Total:</b> {total:,.2f} {currency}\n"
-                        response += f"<b>Transacciones:</b> {len(transactions)}\n"
+                        response = f"💰 **Ingresos {date_str}:**\n"
+                        response += f"**Total:** {total:,.2f} {currency}\n"
+                        response += f"**Transacciones:** {len(transactions)}\n"
 
                         if len(transactions) <= 5:
-                            response += "\n📋 <b>Detalle:</b>\n"
+                            response += "\n📋 **Detalle:**\n"
                             for tx in transactions:
                                 account_info = f" hacia {tx.account_to}" if tx.account_to else ""
                                 response += f"• {tx.amount:,.2f} {tx.currency}{account_info} - {tx.description or 'Sin descripción'}\n"
@@ -815,13 +815,13 @@ class FinanceAgent:
                     account_info = f" desde {largest.account_from}" if largest.account_from else ""
                     date_info = largest.date.strftime('%d/%m/%Y')
 
-                    response = f"💸 <b>Mayor gasto {date_str}:</b>\n"
-                    response += f"<b>Monto:</b> {largest.amount:,.2f} {largest.currency}\n"
-                    response += f"<b>Fecha:</b> {date_info}\n"
+                    response = f"💸 **Mayor gasto {date_str}:**\n"
+                    response += f"**Monto:** {largest.amount:,.2f} {largest.currency}\n"
+                    response += f"**Fecha:** {date_info}\n"
                     if largest.account_from:
-                        response += f"<b>Cuenta:</b> {largest.account_from}\n"
+                        response += f"**Cuenta:** {largest.account_from}\n"
                     if largest.description:
-                        response += f"<b>Descripción:</b> {largest.description}\n"
+                        response += f"**Descripción:** {largest.description}\n"
 
                     return response
                 else:
@@ -880,21 +880,21 @@ class FinanceAgent:
                 # Build response
                 lang = getattr(self, 'user_language', 'es')
                 if lang == 'es':
-                    response = f"💼 <b>Transacciones {date_str}:</b>\n"
-                    response += f"<b>Total:</b> {len(transactions)} transacciones\n\n"
+                    response = f"💼 **Transacciones {date_str}:**\n"
+                    response += f"**Total:** {len(transactions)} transacciones\n\n"
 
                     if expenses:
                         expense_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in expense_totals.items()])
-                        response += f"💸 <b>Gastos:</b> {len(expenses)} transacciones - {expense_summary}\n"
+                        response += f"💸 **Gastos:** {len(expenses)} transacciones - {expense_summary}\n"
                     if income:
                         income_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in income_totals.items()])
-                        response += f"💰 <b>Ingresos:</b> {len(income)} transacciones - {income_summary}\n"
+                        response += f"💰 **Ingresos:** {len(income)} transacciones - {income_summary}\n"
                     if transfers:
-                        response += f"🔄 <b>Transferencias:</b> {len(transfers)} transacciones\n"
+                        response += f"🔄 **Transferencias:** {len(transfers)} transacciones\n"
                     if conversions:
-                        response += f"💱 <b>Conversiones:</b> {len(conversions)} transacciones\n"
+                        response += f"💱 **Conversiones:** {len(conversions)} transacciones\n"
 
-                    response += "\n📋 <b>Detalle:</b>\n"
+                    response += "\n📋 **Detalle:**\n"
                     for tx in transactions[:10]:  # Show first 10 transactions
                         tx_type_icon = {'expense': '💸', 'income': '💰', 'transfer': '🔄', 'conversion': '💱'}.get(tx.type, '💼')
                         date_info = tx.date.strftime('%d/%m')
@@ -911,21 +911,21 @@ class FinanceAgent:
                     if len(transactions) > 10:
                         response += f"\n... y {len(transactions) - 10} transacciones más"
                 else:  # English
-                    response = f"💼 <b>Transactions {date_str}:</b>\n"
-                    response += f"<b>Total:</b> {len(transactions)} transactions\n\n"
+                    response = f"💼 **Transactions {date_str}:**\n"
+                    response += f"**Total:** {len(transactions)} transactions\n\n"
 
                     if expenses:
                         expense_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in expense_totals.items()])
-                        response += f"💸 <b>Expenses:</b> {len(expenses)} transactions - {expense_summary}\n"
+                        response += f"💸 **Expenses:** {len(expenses)} transactions - {expense_summary}\n"
                     if income:
                         income_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in income_totals.items()])
-                        response += f"💰 <b>Income:</b> {len(income)} transactions - {income_summary}\n"
+                        response += f"💰 **Income:** {len(income)} transactions - {income_summary}\n"
                     if transfers:
-                        response += f"🔄 <b>Transfers:</b> {len(transfers)} transactions\n"
+                        response += f"🔄 **Transfers:** {len(transfers)} transactions\n"
                     if conversions:
-                        response += f"💱 <b>Conversions:</b> {len(conversions)} transactions\n"
+                        response += f"💱 **Conversions:** {len(conversions)} transactions\n"
 
-                    response += "\n📋 <b>Details:</b>\n"
+                    response += "\n📋 **Details:**\n"
                     for tx in transactions[:10]:  # Show first 10 transactions
                         tx_type_icon = {'expense': '💸', 'income': '💰', 'transfer': '🔄', 'conversion': '💱'}.get(tx.type, '💼')
                         date_info = tx.date.strftime('%d/%m')
@@ -987,7 +987,7 @@ class FinanceAgent:
     def _format_monthly_report(self, report: MonthlyReport) -> str:
         """Format monthly report for display."""
         lines = [
-            f"📊 <b>Monthly Report - {report.month:02d}/{report.year}</b>",
+            f"📊 **Monthly Report - {report.month:02d}/{report.year}**",
             "",
             f"💰 Total Income: {report.total_income:,.2f}",
             f"💸 Total Expenses: {report.total_expenses:,.2f}",
@@ -1001,7 +1001,7 @@ class FinanceAgent:
             lines.append(f"🏆 Largest Transaction: {t.amount:,.2f} {t.currency}{account_info}")
             lines.append("")
 
-        lines.append("🏦 <b>Current Balances:</b>")
+        lines.append("🏦 **Current Balances:**")
         if report.balances:
             balance_text = self._format_balances(report.balances)
             lines.append(balance_text)
