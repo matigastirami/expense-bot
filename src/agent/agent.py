@@ -110,6 +110,8 @@ class FinanceAgent:
         - "$" can be used and will be resolved based on the account's primary currency
         - "USD", "ARS", "USDT", "USDC" are valid currency codes
         - Other symbols like "€", "£", "¥" are also valid and will be resolved
+        - Generic terms like "pesos", "dollars" will be resolved to account's primary currency
+        - IMPORTANT: Prefer specific currency codes (ARS, USD) over generic terms (pesos, dollars) when possible
 
         Spanish patterns:
         - "de mi cuenta de [account]" = account_from: [account] (for expenses)
@@ -141,7 +143,13 @@ class FinanceAgent:
 
         Spanish date patterns:
         - "31/08/2025" = August 31, 2025
-        - "el día 31/08" = August 31 (current year)
+        - "el día 31/08" = August 31, 2025 (use current year 2025, unless that would be a future date, then use 2024)
+
+        IMPORTANT DATE LOGIC FOR DD/MM FORMAT:
+        - Always use year 2025 for DD/MM dates UNLESS the date would be in the future
+        - If DD/MM would create a future date, use year 2024 instead
+        - Today is September 2025, so "05/08" = "05/08/2025" (August 5th, 2025 - past date)
+        - Today is September 2025, so "25/09" = "25/09/2024" (September 25th would be future, so use 2024)
 
         Spanish number patterns:
         - "426 mil" = 426000 (mil = thousand)
@@ -184,6 +192,7 @@ class FinanceAgent:
 
         Examples:
         - "Recibí 6000 USD en mi cuenta de Deel el día 31/08/2025" → income, 6000, USD, account_to: "Deel", date: "2025-08-31", description: "6000 USD salary"
+        - "Gasté 10 pesos en comida desde mercadopago el 05/08" → expense, 10, "ARS", account_from: "mercadopago", date: "2025-08-05", description: "comida"
         - "Gasté 400 ARS en el supermercado" → expense, 400, ARS, account_from: null, description: "supermercado"
         - "Gasté $400 de mercadopago" → expense, 400, "$", account_from: "mercadopago", description: "gasto"
         - "Gasté 426 mil ARS en supermercado becerra de mi cuenta de AstroPay" → expense, 426000, ARS, account_from: "AstroPay", description: "supermercado becerra"
@@ -224,21 +233,39 @@ class FinanceAgent:
 
             # Parse date if provided
             if data.get("date"):
-                # Try parsing ISO format first, then Spanish formats
-                parsed_date = dateparser.parse(data["date"], languages=['es', 'en'])
+                parsed_date = None
+
+                # First try manual parsing for DD/MM and DD/MM/YYYY formats to ensure consistent behavior
+                try:
+                    if "/" in data["date"]:
+                        parts = data["date"].split("/")
+                        if len(parts) == 3:
+                            day, month, year = parts
+                            parsed_date = datetime(int(year), int(month), int(day))
+                        elif len(parts) == 2:
+                            # Handle DD/MM format with smart year logic
+                            day, month = parts
+                            current_year = datetime.now().year
+                            current_date = datetime.now()
+
+                            # Try current year first
+                            candidate_date = datetime(current_year, int(month), int(day))
+
+                            # If the date would be in the future, use previous year
+                            if candidate_date > current_date:
+                                candidate_date = datetime(current_year - 1, int(month), int(day))
+
+                            parsed_date = candidate_date
+                except (ValueError, IndexError):
+                    pass
+
+                # If manual parsing failed, fall back to dateparser
+                if not parsed_date:
+                    parsed_date = dateparser.parse(data["date"], languages=['es', 'en'])
+
                 if parsed_date:
                     data["date"] = parsed_date
-                else:
-                    # Handle DD/MM/YYYY format manually for Spanish
-                    try:
-                        if "/" in data["date"]:
-                            parts = data["date"].split("/")
-                            if len(parts) == 3:
-                                day, month, year = parts
-                                parsed_date = datetime(int(year), int(month), int(day))
-                                data["date"] = parsed_date
-                    except (ValueError, IndexError):
-                        pass
+
 
             return ParsedTransactionIntent(**data)
 
@@ -372,8 +399,27 @@ class FinanceAgent:
 
             # Resolve generic currency symbols based on account's primary currency
             intent.currency = await self._resolve_currency_symbol(intent.currency, intent.account_from, intent.account_to, user_id)
+            if intent.currency == "ERROR_PESO_MISMATCH":
+                from src.utils.language import Messages
+                lang = getattr(self, 'user_language', 'es')
+                if lang == 'es':
+                    account_name = intent.account_from or intent.account_to or "la cuenta"
+                    return f"❌ Error: La cuenta {account_name} no maneja pesos. Por favor especifica la moneda correcta (ej: USD, USDT, etc.)"
+                else:
+                    account_name = intent.account_from or intent.account_to or "the account"
+                    return f"❌ Error: {account_name} doesn't handle pesos. Please specify the correct currency (e.g., USD, USDT, etc.)"
+
             if intent.currency_to:
                 intent.currency_to = await self._resolve_currency_symbol(intent.currency_to, intent.account_from, intent.account_to, user_id)
+                if intent.currency_to == "ERROR_PESO_MISMATCH":
+                    from src.utils.language import Messages
+                    lang = getattr(self, 'user_language', 'es')
+                    if lang == 'es':
+                        account_name = intent.account_from or intent.account_to or "la cuenta"
+                        return f"❌ Error: La cuenta {account_name} no maneja pesos. Por favor especifica la moneda correcta (ej: USD, USDT, etc.)"
+                    else:
+                        account_name = intent.account_from or intent.account_to or "the account"
+                        return f"❌ Error: {account_name} doesn't handle pesos. Please specify the correct currency (e.g., USD, USDT, etc.)"
 
             # If exchange rate is needed but not provided, fetch it
             if (intent.intent == TransactionIntent.CONVERSION and
@@ -415,10 +461,19 @@ class FinanceAgent:
 
     async def _resolve_currency_symbol(self, currency: str, account_from: Optional[str], account_to: Optional[str], user_id: int) -> str:
         """
-        Resolve generic currency symbols (like $) to actual currency codes based on account's primary currency.
+        Resolve generic currency symbols and names (like $, pesos, dollars) to actual currency codes based on account's primary currency.
         For expenses, check account_from. For income, check account_to.
         """
-        if not currency or currency in ["$", "₱", "€", "£", "¥"]:  # Generic currency symbols
+        if not currency:
+            return "USD"  # Default fallback
+
+        # Normalize currency for comparison
+        currency_lower = currency.lower().strip()
+
+        # Generic currency symbols and names that need resolution
+        generic_currencies = ["$", "₱", "€", "£", "¥", "pesos", "peso", "dollars", "dollar", "dolares", "dolar"]
+
+        if currency in ["$", "₱", "€", "£", "¥"] or currency_lower in ["pesos", "peso", "dollars", "dollar", "dolares", "dolar"]:
             # Determine which account to check based on transaction type
             account_to_check = None
             if account_from:  # For expenses/transfers from an account
@@ -435,8 +490,8 @@ class FinanceAgent:
                         primary_balance = max(account.balances, key=lambda b: b.balance)
                         resolved_currency = primary_balance.currency
 
-                        # Map generic symbols to specific currencies based on account's currencies
-                        if currency == "$":
+                        # Map generic symbols and names to specific currencies based on account's currencies
+                        if currency == "$" or currency_lower in ["dollars", "dollar", "dolares", "dolar"]:
                             # Check what dollar currencies the account has
                             account_currencies = [b.currency for b in account.balances if b.balance > 0]
 
@@ -447,6 +502,24 @@ class FinanceAgent:
                                 return "ARS"  # ARS second priority for $ in Spanish context
                             else:
                                 return "USD"  # Default assumption for $ symbol
+                        elif currency_lower in ["pesos", "peso"]:
+                            # "pesos" should resolve to account's primary currency if it's a peso currency
+                            account_currencies = [b.currency for b in account.balances if b.balance > 0]
+
+                            # Check if account has peso currencies (ARS, MXN, COP, etc.)
+                            peso_currencies = ["ARS", "MXN", "COP", "CLP", "UYU", "PEN"]  # Common peso currencies
+                            for peso_curr in peso_currencies:
+                                if peso_curr in account_currencies:
+                                    return peso_curr
+
+                            # If no peso currency found but account has other currencies, this might be an error
+                            if account_currencies:
+                                from src.utils.language import Messages
+                                lang = getattr(self, 'user_language', 'es')
+                                # Return an error indicator - we'll handle this in the calling function
+                                return "ERROR_PESO_MISMATCH"
+                            else:
+                                return "ARS"  # Default assumption for pesos
                         elif currency == "€":
                             return "EUR"
                         elif currency == "£":
@@ -459,14 +532,20 @@ class FinanceAgent:
                             return resolved_currency  # Return account's primary currency
 
             # If no account specified or account not found, return defaults
-            symbol_map = {
-                "$": "USD",
-                "€": "EUR",
-                "£": "GBP",
-                "¥": "JPY",
-                "₱": "PHP"
-            }
-            return symbol_map.get(currency, "USD")
+            if currency == "$" or currency_lower in ["dollars", "dollar", "dolares", "dolar"]:
+                return "USD"
+            elif currency_lower in ["pesos", "peso"]:
+                return "ARS"  # Default assumption for pesos when no account context
+            elif currency == "€":
+                return "EUR"
+            elif currency == "£":
+                return "GBP"
+            elif currency == "¥":
+                return "JPY"
+            elif currency == "₱":
+                return "PHP"
+            else:
+                return "USD"
 
         # Return the currency as-is if it's already a valid currency code
         return currency
