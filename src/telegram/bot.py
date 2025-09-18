@@ -103,7 +103,7 @@ I'm your intelligent financial assistant that understands natural language in bo
 • Ask: "How much did I spend this week?" or "Show my expenses"
 
 <b>📊 Generate Reports:</b>
-• Use: /report (current month) or /report 2024-09 (specific month)
+• Use: /report (current month), /report 2024-09 (specific month), or /report pdf 2024-09 (PDF version)
 • Ask: "What was my biggest expense last month?"
 
 <b>🌍 Multi-Currency &amp; Multi-Language:</b>
@@ -268,11 +268,20 @@ async def report_command(message: Message) -> None:
         # Ensure user exists in database
         user_id = await ensure_user_exists(message)
 
-        # Extract month/year from command args
-        args = message.text.split(maxsplit=1)
+        # Extract parameters from command args
+        args = message.text.split()
+        is_pdf = False
+        date_str = None
 
-        if len(args) > 1:
-            date_str = args[1]
+        # Parse arguments (can be "/report pdf 2025-09" or "/report 2025-09 pdf" etc.)
+        for arg in args[1:]:  # Skip the command itself
+            if arg.lower() == "pdf":
+                is_pdf = True
+            elif "-" in arg:  # Likely a date
+                date_str = arg
+
+        # Parse date
+        if date_str:
             try:
                 date_parts = date_str.split("-")
                 if len(date_parts) == 2:
@@ -289,12 +298,40 @@ async def report_command(message: Message) -> None:
             month = now.month
             year = now.year
 
-        report = await finance_agent.db_tool.generate_monthly_report(
-            QueryMonthlyReportInput(month=month, year=year), user_id
-        )
+        # Generate PDF or regular report
+        if is_pdf:
+            try:
+                from aiogram.types import FSInputFile
+                import os
 
-        response = finance_agent._format_monthly_report(report)
-        await message.answer(response, parse_mode="HTML")
+                # Show typing indicator for PDF generation
+                await message.bot.send_chat_action(message.chat.id, "upload_document")
+
+                pdf_path = await finance_agent.db_tool.generate_monthly_report_pdf(
+                    QueryMonthlyReportInput(month=month, year=year), user_id
+                )
+
+                # Send PDF file
+                pdf_file = FSInputFile(pdf_path)
+                await message.answer_document(
+                    pdf_file,
+                    caption=f"📊 Monthly Report PDF - {month:02d}/{year}"
+                )
+
+                # Clean up temporary file
+                if os.path.exists(pdf_path):
+                    os.unlink(pdf_path)
+
+            except Exception as e:
+                logger.error(f"Error generating PDF report: {e}")
+                await message.answer("❌ Sorry, I encountered an error generating your PDF report. Please try again.")
+        else:
+            report = await finance_agent.db_tool.generate_monthly_report(
+                QueryMonthlyReportInput(month=month, year=year), user_id
+            )
+
+            response = finance_agent._format_monthly_report(report)
+            await message.answer(response, parse_mode="HTML")
 
     except Exception as e:
         logger.error(f"Error in report command: {e}")
@@ -333,12 +370,34 @@ async def process_text(message: Message, state: FSMContext) -> None:
 
             await message.answer(response, reply_markup=keyboard, parse_mode="HTML")
         else:
-            # Regular response without confirmation
-            if len(response) > 4000:
-                for i in range(0, len(response), 4000):
-                    await message.answer(response[i:i+4000], parse_mode="HTML")
+            # Check if response is a PDF file
+            if response.startswith("PDF_FILE:"):
+                pdf_path = response[9:]  # Remove "PDF_FILE:" prefix
+                try:
+                    from aiogram.types import FSInputFile
+                    import os
+
+                    # Send PDF file
+                    pdf_file = FSInputFile(pdf_path)
+                    await message.answer_document(
+                        pdf_file,
+                        caption="📊 Your financial report is ready!"
+                    )
+
+                    # Clean up temporary file
+                    if os.path.exists(pdf_path):
+                        os.unlink(pdf_path)
+
+                except Exception as e:
+                    logger.error(f"Error sending PDF file: {e}")
+                    await message.answer("❌ Sorry, I encountered an error generating your PDF report. Please try again.")
             else:
-                await message.answer(response, parse_mode="HTML")
+                # Regular response without confirmation
+                if len(response) > 4000:
+                    for i in range(0, len(response), 4000):
+                        await message.answer(response[i:i+4000], parse_mode="HTML")
+                else:
+                    await message.answer(response, parse_mode="HTML")
 
     except Exception as e:
         logger.error(f"Error processing message: {e}")

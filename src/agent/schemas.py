@@ -19,12 +19,12 @@ class ParsedTransactionIntent(BaseModel):
     currency: str = Field(..., description="Currency code (e.g., USD, ARS, USDT)")
     account_from: Optional[str] = Field(None, description="Source account name")
     account_to: Optional[str] = Field(None, description="Destination account name")
-    
+
     # For conversions
     amount_to: Optional[Decimal] = Field(None, description="Converted amount")
     currency_to: Optional[str] = Field(None, description="Target currency for conversion")
     exchange_rate: Optional[Decimal] = Field(None, description="Exchange rate used")
-    
+
     # Optional fields
     date: Optional[datetime] = Field(None, description="Transaction date")
     description: Optional[str] = Field(None, description="Transaction description")
@@ -43,8 +43,10 @@ class QueryIntent(str, Enum):
     LARGEST_PURCHASE = "largest_purchase"
     SAVINGS = "savings"
     MONTHLY_REPORT = "monthly_report"
+    MONTHLY_REPORT_PDF = "monthly_report_pdf"
     ALL_ACCOUNTS = "all_accounts"
     ALL_TRANSACTIONS = "all_transactions"
+    ALL_TRANSACTIONS_PDF = "all_transactions_pdf"
 
 
 class ParsedQueryIntent(BaseModel):

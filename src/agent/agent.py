@@ -288,8 +288,10 @@ class FinanceAgent:
         - largest_purchase: largest transaction (mayor compra, largest purchase, biggest expense, gasto más grande)
         - savings: net savings (ahorros, savings, profit, ganancia)
         - monthly_report: monthly summary (reporte mensual, monthly report, resumen del mes)
+        - monthly_report_pdf: PDF monthly summary (reporte mensual PDF, monthly report PDF, PDF report)
         - all_accounts: show all accounts (todas las cuentas, all accounts, mis cuentas)
         - all_transactions: list all transactions (listame las transacciones, list transactions, show transactions, transacciones, historial)
+        - all_transactions_pdf: PDF transaction list (transacciones PDF, transaction PDF, PDF transactions)
 
         Date/Time parsing (be very smart about this):
         - "hoy/today" → today's date range
@@ -316,7 +318,7 @@ class FinanceAgent:
 
         Use this exact format:
         {{
-            "intent": "balance|expenses|income|largest_purchase|savings|monthly_report|all_accounts|all_transactions",
+            "intent": "balance|expenses|income|largest_purchase|savings|monthly_report|monthly_report_pdf|all_accounts|all_transactions|all_transactions_pdf",
             "account_name": "string or null",
             "currency": "string or null",
             "date_expression": "original date expression from user for parsing",
@@ -1031,6 +1033,38 @@ class FinanceAgent:
                     QueryMonthlyReportInput(month=month, year=year), user_id
                 )
                 return self._format_monthly_report(report)
+
+            elif intent.intent == QueryIntent.MONTHLY_REPORT_PDF:
+                month = intent.month or datetime.now().month
+                year = intent.year or datetime.now().year
+
+                pdf_path = await self.db_tool.generate_monthly_report_pdf(
+                    QueryMonthlyReportInput(month=month, year=year), user_id
+                )
+                return f"PDF_FILE:{pdf_path}"
+
+            elif intent.intent == QueryIntent.ALL_TRANSACTIONS_PDF:
+                if not intent.start_date or not intent.end_date:
+                    # If no date range, assume last 30 days
+                    from datetime import datetime, timedelta
+                    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                    intent.start_date = today - timedelta(days=29)
+                    intent.end_date = today + timedelta(days=1) - timedelta(microseconds=1)
+
+                # Apply account name normalization for PDF queries too
+                account_name = intent.account_name
+                if account_name:
+                    account_name = await self._find_similar_account(account_name, user_id)
+
+                pdf_path = await self.db_tool.generate_transactions_pdf(
+                    QueryTransactionsInput(
+                        start_date=intent.start_date,
+                        end_date=intent.end_date,
+                        account_name=account_name,
+                        transaction_type=None  # Get all transaction types for PDF
+                    ), user_id
+                )
+                return f"PDF_FILE:{pdf_path}"
 
             else:
                 return "❌ Query type not yet implemented"
