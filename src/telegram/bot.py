@@ -11,10 +11,18 @@ from aiogram.utils.markdown import hbold
 
 from src.agent.agent import FinanceAgent
 from src.agent.tools.db_tool import QueryBalancesInput, QueryMonthlyReportInput
-from src.telegram.states import TransactionStates
+from src.telegram.states import TransactionStates, SettingsStates
+from src.telegram.keyboards import (
+    build_main_settings_keyboard,
+    build_balance_settings_keyboard,
+    build_confirmation_keyboard,
+    build_account_settings_keyboard
+)
 from src.config import settings
 from src.db.base import async_session_maker
-from src.db.crud import UserCRUD
+from src.db.crud import UserCRUD, AccountCRUD
+from src.db.models import BalanceTrackingMode, User
+from sqlalchemy import select, update
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +45,7 @@ async def setup_bot_commands():
         BotCommand(command="help", description="📚 Complete guide with examples"),
         BotCommand(command="balance", description="💰 Show account balances"),
         BotCommand(command="report", description="📊 Monthly financial report"),
+        BotCommand(command="settings", description="⚙️ Configure balance tracking & preferences"),
     ]
     await bot.set_my_commands(commands)
     logger.info("Bot commands registered successfully")
@@ -52,6 +61,20 @@ async def ensure_user_exists(message: Message) -> int:
             last_name=message.from_user.last_name,
             username=message.from_user.username,
             language_code=message.from_user.language_code,
+        )
+        return user.id
+
+
+async def ensure_user_exists_from_callback(callback: CallbackQuery) -> int:
+    """Ensure user exists in database and return user_id from callback query."""
+    async with async_session_maker() as session:
+        user = await UserCRUD.get_or_create(
+            session,
+            telegram_user_id=str(callback.from_user.id),
+            first_name=callback.from_user.first_name,
+            last_name=callback.from_user.last_name,
+            username=callback.from_user.username,
+            language_code=callback.from_user.language_code,
         )
         return user.id
 
@@ -338,6 +361,44 @@ async def report_command(message: Message) -> None:
         await message.answer("❌ Error generating report. Please try again.")
 
 
+@router.message(Command("settings"))
+async def settings_command(message: Message, state: FSMContext) -> None:
+    """Handle /settings command."""
+    try:
+        # Ensure user exists in database
+        user_id = await ensure_user_exists(message)
+
+        async with async_session_maker() as session:
+            # Get user's current settings
+            user_result = await session.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = user_result.scalar_one()
+
+            # Set state and send settings menu
+            await state.set_state(SettingsStates.main_menu)
+
+            keyboard = build_main_settings_keyboard(user.balance_tracking_mode)
+
+            settings_text = """⚙️ <b>Settings</b>
+
+Configure your personal finance tracking preferences:
+
+💰 <b>Balance Tracking</b>: Controls how account balances are managed
+• <b>STRICT</b>: Prevents negative balances, enforces limits
+• <b>LOGGING</b>: Allows any transaction, focuses on recording
+
+🏦 <b>Account Settings</b>: Configure per-account balance tracking
+
+Choose an option below:"""
+
+            await message.answer(settings_text, reply_markup=keyboard, parse_mode="HTML")
+
+    except Exception as e:
+        logger.error(f"Error in settings command: {e}")
+        await message.answer("❌ Error accessing settings. Please try again.")
+
+
 @router.message(F.text)
 async def process_text(message: Message, state: FSMContext) -> None:
     """Handle all other text messages."""
@@ -449,6 +510,208 @@ async def cancel_transaction_callback(callback: CallbackQuery, state: FSMContext
     except Exception as e:
         logger.error(f"Error canceling transaction: {e}")
         await callback.answer("❌ Error al cancelar")
+
+
+# Settings Callback Handlers
+@router.callback_query(F.data == "settings_main")
+async def settings_main_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    """Return to main settings menu."""
+    try:
+        # Get user's current settings
+        user_id = await ensure_user_exists_from_callback(callback)
+
+        async with async_session_maker() as session:
+            user_result = await session.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = user_result.scalar_one()
+
+            await state.set_state(SettingsStates.main_menu)
+            keyboard = build_main_settings_keyboard(user.balance_tracking_mode)
+
+            settings_text = """⚙️ <b>Settings</b>
+
+Configure your personal finance tracking preferences:
+
+💰 <b>Balance Tracking</b>: Controls how account balances are managed
+• <b>STRICT</b>: Prevents negative balances, enforces limits
+• <b>LOGGING</b>: Allows any transaction, focuses on recording
+
+🏦 <b>Account Settings</b>: Configure per-account balance tracking
+
+Choose an option below:"""
+
+            await callback.message.edit_text(settings_text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in settings main: {e}")
+        await callback.answer("❌ Error")
+
+
+@router.callback_query(F.data == "settings_balance")
+async def settings_balance_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    """Show balance tracking settings."""
+    try:
+        user_id = await ensure_user_exists_from_callback(callback)
+
+        async with async_session_maker() as session:
+            user_result = await session.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = user_result.scalar_one()
+
+            await state.set_state(SettingsStates.balance_settings)
+            keyboard = build_balance_settings_keyboard(user.balance_tracking_mode)
+
+            if user.balance_tracking_mode == BalanceTrackingMode.STRICT:
+                settings_text = """🔧 <b>STRICT Balance Tracking</b>
+
+<b>Current Mode: STRICT ✅</b>
+
+<b>What this means:</b>
+• Prevents negative balances in accounts
+• Blocks transactions if insufficient funds
+• Enforces financial discipline
+• Great for tracking real account balances
+
+<b>Perfect for:</b>
+• Bank accounts you want to track accurately
+• Preventing accidental overspending
+• Maintaining precise balance records
+
+Choose an option below:"""
+            else:
+                settings_text = """📝 <b>LOGGING Balance Tracking</b>
+
+<b>Current Mode: LOGGING ✅</b>
+
+<b>What this means:</b>
+• No balance constraints or limits
+• Focus purely on transaction recording
+• Allows any transaction amount
+• Great for expense tracking without balance management
+
+<b>Perfect for:</b>
+• Credit cards (tracked externally)
+• Complex accounts managed elsewhere
+• Pure expense/income logging
+
+Choose an option below:"""
+
+            await callback.message.edit_text(settings_text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in balance settings: {e}")
+        await callback.answer("❌ Error")
+
+
+@router.callback_query(F.data.startswith("balance_change_"))
+async def balance_change_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    """Handle balance mode change requests."""
+    try:
+        new_mode = callback.data.split("_")[-1]  # "strict" or "logging"
+
+        await state.set_state(SettingsStates.confirm_balance_mode_change)
+        await state.update_data(new_mode=new_mode)
+
+        keyboard = build_confirmation_keyboard(new_mode)
+
+        if new_mode == "strict":
+            confirmation_text = """⚠️ <b>Switch to STRICT Mode?</b>
+
+This will:
+✅ Prevent negative balances on all accounts
+✅ Block transactions with insufficient funds
+✅ Enforce balance constraints
+
+All future transactions will be validated against account balances.
+
+Are you sure you want to switch?"""
+        else:
+            confirmation_text = """⚠️ <b>Switch to LOGGING Mode?</b>
+
+This will:
+✅ Allow any transaction amount
+✅ Remove balance constraints
+✅ Focus on pure transaction recording
+
+Account balances will no longer be automatically tracked.
+
+Are you sure you want to switch?"""
+
+        await callback.message.edit_text(confirmation_text, reply_markup=keyboard, parse_mode="HTML")
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in balance change: {e}")
+        await callback.answer("❌ Error")
+
+
+@router.callback_query(F.data.startswith("confirm_balance_"))
+async def confirm_balance_change_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    """Confirm balance mode change."""
+    try:
+        new_mode = callback.data.split("_")[-1]  # "strict" or "logging"
+        user_id = await ensure_user_exists_from_callback(callback)
+
+        async with async_session_maker() as session:
+            # Update user's balance tracking mode
+            debug_msg = f"🔍 DEBUG: Updating user {user_id} to mode: {new_mode}"
+            await callback.message.answer(debug_msg)
+
+            result = await session.execute(
+                update(User)
+                .where(User.id == user_id)
+                .values(balance_tracking_mode=new_mode)
+            )
+
+            debug_msg2 = f"🔍 DEBUG: Update result: {result.rowcount} rows affected"
+            await callback.message.answer(debug_msg2)
+
+            await session.commit()
+            await callback.message.answer("🔍 DEBUG: Update committed successfully")
+
+            mode_name = "STRICT" if new_mode == "strict" else "LOGGING"
+            success_text = f"""✅ <b>Balance Tracking Updated!</b>
+
+Your balance tracking mode has been changed to: <b>{mode_name}</b>
+
+The new setting will apply to all future transactions."""
+
+            # Return to balance settings
+            await state.set_state(SettingsStates.balance_settings)
+            keyboard = build_balance_settings_keyboard(new_mode)
+
+            await callback.message.edit_text(success_text + "\n\n" + "Choose an option:", reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer(f"✅ Switched to {mode_name} mode")
+
+    except Exception as e:
+        logger.error(f"Error confirming balance change: {e}")
+        # Send error details to user for debugging
+        error_msg = f"🔍 DEBUG: Exception in confirm_balance_change: {str(e)}"
+        await callback.message.answer(error_msg)
+        await callback.answer("❌ Error updating settings")
+
+
+@router.callback_query(F.data == "settings_close")
+async def settings_close_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    """Close settings menu."""
+    try:
+        await state.clear()
+        await callback.message.edit_text("⚙️ Settings closed.")
+        await callback.answer("Settings closed")
+
+    except Exception as e:
+        logger.error(f"Error closing settings: {e}")
+        await callback.answer("❌ Error")
+
+
+@router.callback_query(F.data == "noop")
+async def noop_callback(callback: CallbackQuery) -> None:
+    """Handle no-operation callbacks for informational buttons."""
+    await callback.answer()
 
 
 # Register router

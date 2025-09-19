@@ -36,6 +36,11 @@ class TransactionType(str, Enum):
     CONVERSION = "conversion"
 
 
+class BalanceTrackingMode(str, Enum):
+    STRICT = "strict"
+    LOGGING = "logging"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -46,6 +51,11 @@ class User(Base):
     username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     language_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    balance_tracking_mode: Mapped[str] = mapped_column(
+        SQLEnum('strict', 'logging', name='balancetrackingmode', native_enum=True),
+        default=BalanceTrackingMode.STRICT,
+        nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -76,6 +86,7 @@ class Account(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[str] = mapped_column(SQLEnum('bank', 'wallet', 'cash', 'other', name='accounttype', native_enum=True), nullable=False)
+    track_balance: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

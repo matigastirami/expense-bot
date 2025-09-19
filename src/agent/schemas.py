@@ -69,6 +69,7 @@ class BalanceInfo(BaseModel):
     account_name: str
     currency: str
     balance: Decimal
+    is_tracked: Optional[bool] = True  # Default to True for backward compatibility
 
     class Config:
         json_encoders = {Decimal: str}

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from src.agent.schemas import BalanceInfo, MonthlyReport, TransactionInfo
 from src.db.base import async_session_maker
 from src.db.crud import AccountBalanceCRUD, AccountCRUD, ExchangeRateCRUD, PendingTransactionCRUD, TransactionCRUD
-from src.db.models import AccountBalance, AccountType, TransactionType
+from src.db.models import Account, AccountBalance, AccountType, BalanceTrackingMode, TransactionType, User
 from src.reports.pdf_service import PDFReportService
 
 
@@ -47,6 +47,42 @@ class QueryMonthlyReportInput(BaseModel):
 class DbTool(BaseTool):
     name: str = "db_tool"
     description: str = "Database tool for financial operations: register transactions, query balances, and generate reports"
+
+    async def _should_track_balance(self, session: AsyncSession, user_id: int, account_id: int) -> bool:
+        """Check if balance tracking should be enabled for this account."""
+        # Get user's balance tracking mode
+        user_result = await session.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = user_result.scalar_one()
+
+        # Get account's specific setting
+        account_result = await session.execute(
+            select(Account).where(Account.id == account_id)
+        )
+        account = account_result.scalar_one()
+
+        # Debug logging - we'll return this info for display
+        debug_info = {
+            'user_mode': str(user.balance_tracking_mode),
+            'user_mode_type': str(type(user.balance_tracking_mode)),
+            'account_track': account.track_balance,
+            'should_track': None
+        }
+
+        # Account-specific setting overrides user setting
+        if account.track_balance is not None:
+            result = account.track_balance
+        else:
+            # Fall back to user's general setting - compare as strings to be safe
+            result = str(user.balance_tracking_mode) == "strict"
+
+        debug_info['should_track'] = result
+
+        # Store debug info for later use (we'll access this in transaction processing)
+        self._last_debug_info = debug_info
+
+        return result
 
     async def register_transaction(self, input_data: RegisterTransactionInput) -> str:
         async with async_session_maker() as session:
@@ -96,9 +132,11 @@ class DbTool(BaseTool):
                         )
                         return f"⏳ Transaction queued - Exchange rate for {input_data.currency}/{account_currency} temporarily unavailable. Will retry automatically every 2 hours."
 
-                    await AccountBalanceCRUD.add_to_balance(
-                        session, account_to.id, account_currency, converted_amount
-                    )
+                    # Only update balance if tracking is enabled
+                    if await self._should_track_balance(session, input_data.user_id, account_to.id):
+                        await AccountBalanceCRUD.add_to_balance(
+                            session, account_to.id, account_currency, converted_amount
+                        )
 
                     await TransactionCRUD.create(
                         session=session,
@@ -135,9 +173,11 @@ class DbTool(BaseTool):
                         )
                         return f"⏳ Transaction queued - Exchange rate for {input_data.currency}/{account_currency} temporarily unavailable. Will retry automatically every 2 hours."
 
-                    await AccountBalanceCRUD.add_to_balance(
-                        session, account_from.id, account_currency, -converted_amount
-                    )
+                    # Only update balance if tracking is enabled
+                    if await self._should_track_balance(session, input_data.user_id, account_from.id):
+                        await AccountBalanceCRUD.add_to_balance(
+                            session, account_from.id, account_currency, -converted_amount
+                        )
 
                     await TransactionCRUD.create(
                         session=session,
@@ -194,15 +234,17 @@ class DbTool(BaseTool):
                         )
                         return f"⏳ Transaction queued - Exchange rate for {failed_pair} temporarily unavailable. Will retry automatically every 2 hours."
 
-                    # Remove from source
-                    await AccountBalanceCRUD.add_to_balance(
-                        session, account_from.id, from_currency, -from_converted_amount
-                    )
+                    # Remove from source (only if tracking enabled)
+                    if await self._should_track_balance(session, input_data.user_id, account_from.id):
+                        await AccountBalanceCRUD.add_to_balance(
+                            session, account_from.id, from_currency, -from_converted_amount
+                        )
 
-                    # Add to destination
-                    await AccountBalanceCRUD.add_to_balance(
-                        session, account_to.id, to_currency, to_converted_amount
-                    )
+                    # Add to destination (only if tracking enabled)
+                    if await self._should_track_balance(session, input_data.user_id, account_to.id):
+                        await AccountBalanceCRUD.add_to_balance(
+                            session, account_to.id, to_currency, to_converted_amount
+                        )
 
                     await TransactionCRUD.create(
                         session=session,
@@ -227,16 +269,18 @@ class DbTool(BaseTool):
                     if not account_to:
                         account_to = account_from
 
-                    # Remove source currency
-                    await AccountBalanceCRUD.add_to_balance(
-                        session, account_from.id, input_data.currency, -amount
-                    )
+                    # Remove source currency (only if tracking enabled)
+                    if await self._should_track_balance(session, input_data.user_id, account_from.id):
+                        await AccountBalanceCRUD.add_to_balance(
+                            session, account_from.id, input_data.currency, -amount
+                        )
 
-                    # Add destination currency
+                    # Add destination currency (only if tracking enabled)
                     amount_to = Decimal(str(input_data.amount_to))
-                    await AccountBalanceCRUD.add_to_balance(
-                        session, account_to.id, input_data.currency_to, amount_to
-                    )
+                    if await self._should_track_balance(session, input_data.user_id, account_to.id):
+                        await AccountBalanceCRUD.add_to_balance(
+                            session, account_to.id, input_data.currency_to, amount_to
+                        )
 
                     await TransactionCRUD.create(
                         session=session,
@@ -257,7 +301,15 @@ class DbTool(BaseTool):
 
             except Exception as e:
                 await session.rollback()
-                return f"❌ Error registering transaction: {str(e)}"
+                # Include debug info if available
+                debug_str = ""
+                if hasattr(self, '_last_debug_info') and self._last_debug_info:
+                    debug_info = self._last_debug_info
+                    debug_str = f"\n🔍 DEBUG INFO:\n" \
+                              f"• User mode: {debug_info['user_mode']} ({debug_info['user_mode_type']})\n" \
+                              f"• Account track_balance: {debug_info['account_track']}\n" \
+                              f"• Should track: {debug_info['should_track']}"
+                return f"❌ Error registering transaction: {str(e)}{debug_str}"
 
     async def query_balances(self, input_data: QueryBalancesInput, user_id: int) -> List[BalanceInfo]:
         async with async_session_maker() as session:
@@ -271,15 +323,31 @@ class DbTool(BaseTool):
 
             balances = []
             for account in accounts:
-                for balance in account.balances:
-                    if balance.balance > 0:  # Only show non-zero balances
-                        balances.append(
-                            BalanceInfo(
-                                account_name=account.name,
-                                currency=balance.currency,
-                                balance=balance.balance,
+                # Check if this account tracks balances
+                should_track = await self._should_track_balance(session, user_id, account.id)
+
+                if should_track:
+                    # Show actual balances for tracked accounts
+                    for balance in account.balances:
+                        if balance.balance > 0:  # Only show non-zero balances
+                            balances.append(
+                                BalanceInfo(
+                                    account_name=account.name,
+                                    currency=balance.currency,
+                                    balance=balance.balance,
+                                    is_tracked=True
+                                )
                             )
+                else:
+                    # Show "Not tracked" status for non-tracked accounts
+                    balances.append(
+                        BalanceInfo(
+                            account_name=account.name,
+                            currency="N/A",
+                            balance=Decimal("0"),  # Use 0 as placeholder, will be handled in formatting
+                            is_tracked=False  # We'll need to add this field
                         )
+                    )
 
             return balances
 

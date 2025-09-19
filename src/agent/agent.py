@@ -1077,23 +1077,40 @@ class FinanceAgent:
         if not balances:
             return "No balances found."
 
-        # Group by account
-        accounts = {}
+        # Separate tracked and non-tracked accounts
+        tracked_accounts = {}
+        non_tracked_accounts = []
+
         for balance in balances:
-            if balance.account_name not in accounts:
-                accounts[balance.account_name] = []
-            accounts[balance.account_name].append(balance)
+            if balance.is_tracked == False:  # Explicitly check for False
+                non_tracked_accounts.append(balance.account_name)
+            else:
+                if balance.account_name not in tracked_accounts:
+                    tracked_accounts[balance.account_name] = []
+                tracked_accounts[balance.account_name].append(balance)
 
         lines = []
-        for account_name, account_balances in accounts.items():
-            if len(account_balances) == 1:
-                balance = account_balances[0]
-                lines.append(f"* {account_name} – {balance.currency} {balance.balance:,.2f}")
-            else:
-                currencies = []
-                for balance in account_balances:
-                    currencies.append(f"{balance.currency} {balance.balance:,.2f}")
-                lines.append(f"* {account_name} – {', '.join(currencies)}")
+
+        # Format tracked accounts with balances
+        if tracked_accounts:
+            lines.append("💰 <b>Tracked Accounts:</b>")
+            for account_name, account_balances in tracked_accounts.items():
+                if len(account_balances) == 1:
+                    balance = account_balances[0]
+                    lines.append(f"• {account_name} – {balance.currency} {balance.balance:,.2f}")
+                else:
+                    currencies = []
+                    for balance in account_balances:
+                        currencies.append(f"{balance.currency} {balance.balance:,.2f}")
+                    lines.append(f"• {account_name} – {', '.join(currencies)}")
+
+        # Format non-tracked accounts
+        if non_tracked_accounts:
+            if tracked_accounts:  # Add spacing if there are tracked accounts too
+                lines.append("")
+            lines.append("📝 <b>Logging-Only Accounts:</b>")
+            for account_name in non_tracked_accounts:
+                lines.append(f"• {account_name} – <i>Balance not tracked</i>")
 
         return "\n".join(lines)
 
