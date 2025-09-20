@@ -46,6 +46,10 @@ async def setup_bot_commands():
         BotCommand(command="balance", description="💰 Show account balances"),
         BotCommand(command="report", description="📊 Monthly financial report"),
         BotCommand(command="settings", description="⚙️ Configure balance tracking & preferences"),
+        # Financial Analysis Agent commands
+        BotCommand(command="analyze", description="📊 Analyze spending for any period"),
+        BotCommand(command="expense", description="💸 Quick expense entry with classification"),
+        BotCommand(command="budget", description="💰 Set budget percentages"),
     ]
     await bot.set_my_commands(commands)
     logger.info("Bot commands registered successfully")
@@ -399,9 +403,28 @@ Choose an option below:"""
         await message.answer("❌ Error accessing settings. Please try again.")
 
 
-@router.message(F.text)
+@router.message(F.text.startswith("/"))
+async def handle_unknown_command(message: Message) -> None:
+    """Handle unknown commands."""
+    command = message.text.split()[0]
+    await message.answer(
+        f"❌ Unknown command: {command}\n\n"
+        "Available commands:\n"
+        "• /start - Welcome guide\n"
+        "• /help - Complete guide\n"
+        "• /balance - Show balances\n"
+        "• /report - Monthly report\n"
+        "• /settings - Configure settings\n"
+        "• /analyze - Analyze spending\n"
+        "• /expense - Quick expense entry\n"
+        "• /budget - Set budget targets\n\n"
+        "Try typing a command or describe a transaction naturally!"
+    )
+
+
+@router.message(F.text & ~F.text.startswith("/"))
 async def process_text(message: Message, state: FSMContext) -> None:
-    """Handle all other text messages."""
+    """Handle all non-command text messages."""
     try:
         # Ensure user exists in database
         user_id = await ensure_user_exists(message)
@@ -714,7 +737,17 @@ async def noop_callback(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# Register router
+# Register Financial Analysis Agent router FIRST (higher priority)
+try:
+    from src.telegram.financial_agent_handlers import financial_router
+    dp.include_router(financial_router)
+    logger.info("✅ Financial Analysis Agent handlers registered")
+except ImportError as e:
+    logger.error(f"❌ Failed to import financial agent handlers: {e}")
+except Exception as e:
+    logger.error(f"❌ Failed to register financial agent handlers: {e}")
+
+# Register main router AFTER (lower priority, includes catch-all handlers)
 dp.include_router(router)
 
 
