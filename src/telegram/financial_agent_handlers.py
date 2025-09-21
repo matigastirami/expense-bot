@@ -2,18 +2,20 @@
 Telegram bot handlers for Financial Analysis Agent integration.
 
 This module provides the Telegram bot interface for the Financial Analysis Agent,
-including commands, callback handlers, and interactive confirmation flows.
+including commands, callback handlers, interactive confirmation flows, and audio expense entry.
 """
 
 import logging
+import os
+import tempfile
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, Voice
 from aiogram.utils.markdown import hbold, hcode
 
 from src.agent.financial_agent import FinancialAnalysisAgent
@@ -31,6 +33,33 @@ financial_agent = FinancialAnalysisAgent()
 
 # Store pending confirmations (in production, use Redis or database)
 pending_confirmations: Dict[str, Dict[str, Any]] = {}
+
+def cleanup_expired_confirmations():
+    """Clean up confirmations older than 10 minutes to prevent memory leaks."""
+    from datetime import timedelta
+
+    now = datetime.now()
+    expired_ids = []
+
+    for conf_id, data in pending_confirmations.items():
+        if 'created_at' in data:
+            age = now - data['created_at']
+            if age > timedelta(minutes=10):  # 10 minute expiration
+                expired_ids.append(conf_id)
+
+    for conf_id in expired_ids:
+        del pending_confirmations[conf_id]
+        logger.info(f"Cleaned up expired confirmation: {conf_id}")
+
+    if expired_ids:
+        logger.info(f"Cleaned up {len(expired_ids)} expired confirmations")
+
+# Initialize audio transcription service
+try:
+    from src.services.audio_transcription import audio_service
+except ImportError:
+    logger.warning("⚠️ Audio transcription service not available")
+    audio_service = None
 
 
 @financial_router.message(Command("analyze"))
@@ -65,6 +94,244 @@ async def cmd_analyze(message: Message, state: FSMContext):
         language = detect_language(message.text or "")
         error_msg = Messages.get("error", "general_error", language, error=str(e))
         await message.answer(error_msg)
+
+
+@financial_router.message(F.voice)
+async def handle_voice_expense(message: Message, state: FSMContext):
+    """Handle voice messages for expense entry."""
+    try:
+        # Check if audio transcription is available
+        if not audio_service or not audio_service.api_key:
+            language = detect_language(message.from_user.language_code or "en")
+            if language == "es":
+                await message.answer(
+                    "🎤 ¡Me encantaría procesar tu mensaje de voz!\n\n"
+                    "Para habilitar esta función, necesitas configurar una clave API de OpenAI.\n"
+                    "Por ahora, puedes escribir tu gasto de estas formas:\n\n"
+                    "• /expense 50 USD Starbucks café\n"
+                    "• \"Gasté 50 dólares en Starbucks para café\"\n"
+                    "• \"50 USD Starbucks - café de la mañana\""
+                )
+            else:
+                await message.answer(
+                    "🎤 I'd love to process your voice message!\n\n"
+                    "To enable this feature, you need to configure an OpenAI API key.\n"
+                    "For now, you can enter expenses by typing:\n\n"
+                    "• /expense 50 USD Starbucks coffee\n"
+                    "• \"Spent 50 dollars at Starbucks for coffee\"\n"
+                    "• \"50 USD Starbucks - morning coffee\""
+                )
+            return
+
+        # Get user from database
+        async with async_session_maker() as session:
+            user = await UserCRUD.get_by_telegram_id(session, str(message.from_user.id))
+            if not user:
+                await message.answer("❌ User not found. Please use /start first.")
+                return
+
+        # Determine language hint from user's language or previous messages
+        language_hint = None
+        user_language = "en"  # Default
+        if message.from_user.language_code:
+            if message.from_user.language_code.startswith('es'):
+                language_hint = 'es'
+                user_language = "es"
+            elif message.from_user.language_code.startswith('en'):
+                language_hint = 'en'
+                user_language = "en"
+
+        # Show processing indicator in user's language
+        if user_language == "es":
+            processing_msg = await message.answer("🎤 Procesando mensaje de voz...")
+        else:
+            processing_msg = await message.answer("🎤 Processing voice message...")
+
+        try:
+            # Transcribe the voice message
+            transcription = await audio_service.download_and_transcribe_telegram_voice(
+                bot=message.bot,
+                voice=message.voice,
+                language=language_hint
+            )
+
+            if not transcription:
+                if user_language == "es":
+                    await processing_msg.edit_text(
+                        "❌ No pude transcribir el mensaje de voz.\n\n"
+                        "Intenta:\n"
+                        "• Hablar más claro\n"
+                        "• Reducir el ruido de fondo\n"
+                        "• Escribir el gasto manualmente"
+                    )
+                else:
+                    await processing_msg.edit_text(
+                        "❌ Could not transcribe the voice message.\n\n"
+                        "Try:\n"
+                        "• Speaking more clearly\n"
+                        "• Reducing background noise\n"
+                        "• Typing the expense manually"
+                    )
+                return
+
+            # Edit the processing message to show transcription
+            transcription_preview = transcription[:100] + "..." if len(transcription) > 100 else transcription
+            if user_language == "es":
+                await processing_msg.edit_text(f"🎤➡️📝 Transcrito: \"{transcription_preview}\"")
+            else:
+                await processing_msg.edit_text(f"🎤➡️📝 Transcribed: \"{transcription_preview}\"")
+
+            # Parse the transcription for expense information
+            expense_data = await _parse_voice_expense(transcription, user.id)
+
+            if not expense_data:
+                if user_language == "es":
+                    await message.answer(
+                        f"🤔 No pude encontrar información de gasto en:\n\n"
+                        f"\"{transcription}\"\n\n"
+                        "Intenta incluir:\n"
+                        "• Cantidad (ej: 50 pesos, 25 dólares)\n"
+                        "• Lugar o descripción (ej: supermercado, café)\n\n"
+                        "Ejemplo: \"Gasté 50 dólares en Starbucks para café\""
+                    )
+                else:
+                    await message.answer(
+                        f"🤔 I couldn't find expense information in:\n\n"
+                        f"\"{transcription}\"\n\n"
+                        "Try including:\n"
+                        "• Amount (e.g., 50 dollars, 25 euros)\n"
+                        "• Place or description (e.g., grocery store, coffee)\n\n"
+                        "Example: \"I spent 50 dollars at Starbucks for coffee\""
+                    )
+                return
+
+            # Process the expense using the financial agent
+            confirmation = await financial_agent.process_expense_confirmation(**expense_data)
+
+            # Store confirmation for callback with more unique ID
+            import time
+            confirmation_id = f"{user.id}_{int(time.time() * 1000)}"  # Use milliseconds for better uniqueness
+            pending_confirmations[confirmation_id] = {
+                "confirmation": confirmation,
+                "user_id": user.id,
+                "original_transcription": transcription,
+                "created_at": datetime.now()
+            }
+            logger.info(f"Stored confirmation with ID: {confirmation_id}")
+
+            # Send confirmation message with buttons
+            keyboard = _build_expense_confirmation_keyboard(confirmation_id, confirmation)
+            response = _format_expense_confirmation(confirmation)
+
+            # Add transcription info to the response
+            language = confirmation["resolved_language"]
+            if language == "es":
+                transcription_info = f"🎤 Mensaje de voz: \"{transcription}\"\n\n"
+            else:
+                transcription_info = f"🎤 Voice message: \"{transcription}\"\n\n"
+
+            full_response = transcription_info + response
+
+            await message.answer(full_response, reply_markup=keyboard, parse_mode="HTML")
+
+        except Exception as e:
+            logger.error(f"Error processing voice message: {e}")
+            error_msg = "❌ Error al procesar mensaje de voz" if user_language == "es" else "❌ Error processing voice message"
+            await processing_msg.edit_text(f"{error_msg}: {str(e)}")
+
+    except Exception as e:
+        logger.error(f"Error in voice handler: {e}")
+        error_msg = "❌ Error procesando audio" if user_language == "es" else "❌ Error processing audio"
+        await message.answer(error_msg)
+
+
+@financial_router.message(F.text & ~F.text.startswith("/"))
+async def handle_text_expense(message: Message, state: FSMContext):
+    """Handle text messages that might be expenses for enhanced processing."""
+    try:
+        # Check if this looks like an expense message
+        text = message.text.lower()
+        expense_indicators = [
+            # English
+            'spent', 'paid', 'bought', 'cost', 'expense', 'purchase',
+            # Spanish
+            'gasté', 'pagué', 'compré', 'costó', 'gasto', 'compra',
+            # Currency symbols and amounts
+            '$', 'usd', 'ars', 'eur', 'pesos', 'dollars', 'euros'
+        ]
+
+        # Also check for amount patterns
+        import re
+        amount_patterns = [
+            r'\d+\s*(?:usd|dollars?|ars|pesos?|eur|euros?)',
+            r'(?:\$|USD|ARS|EUR)\s*\d+',
+            r'\d+\s*(?:k|thousand)',
+        ]
+
+        has_expense_indicator = any(indicator in text for indicator in expense_indicators)
+        has_amount_pattern = any(re.search(pattern, text, re.IGNORECASE) for pattern in amount_patterns)
+
+        # If this looks like an expense, process with Financial Analysis Agent
+        if has_expense_indicator or has_amount_pattern:
+            # Get user from database
+            async with async_session_maker() as session:
+                user = await UserCRUD.get_by_telegram_id(session, str(message.from_user.id))
+                if not user:
+                    await message.answer("❌ User not found. Please use /start first.")
+                    return
+
+            # Show processing indicator
+            language = detect_language(message.text)
+            if language == "es":
+                processing_msg = await message.answer("💭 Procesando gasto...")
+            else:
+                processing_msg = await message.answer("💭 Processing expense...")
+
+            # Parse the text for expense information
+            expense_data = await _parse_text_expense(message.text, user.id)
+
+            if not expense_data:
+                # Delete processing message and fall back to original bot processing
+                await processing_msg.delete()
+                return
+
+            # Process the expense using the financial agent
+            confirmation = await financial_agent.process_expense_confirmation(**expense_data)
+
+            # Store confirmation for callback with more unique ID
+            import time
+            confirmation_id = f"{user.id}_{int(time.time() * 1000)}"
+            pending_confirmations[confirmation_id] = {
+                "confirmation": confirmation,
+                "user_id": user.id,
+                "created_at": datetime.now(),
+                "original_text": message.text
+            }
+            logger.info(f"Stored text expense confirmation with ID: {confirmation_id}")
+
+            # Send confirmation message with enhanced buttons
+            keyboard = _build_expense_confirmation_keyboard(confirmation_id, confirmation)
+            response = _format_expense_confirmation(confirmation)
+
+            # Add text source info to the response
+            language = confirmation["resolved_language"]
+            if language == "es":
+                text_info = f"📝 Mensaje: \"{message.text}\"\n\n"
+            else:
+                text_info = f"📝 Text message: \"{message.text}\"\n\n"
+
+            full_response = text_info + response
+
+            # Delete the processing message and send the confirmation
+            await processing_msg.delete()
+            await message.answer(full_response, reply_markup=keyboard, parse_mode="HTML")
+            return
+
+        # If not an expense, let the original bot handle it by not handling the message
+
+    except Exception as e:
+        logger.error(f"Error in text expense handler: {e}")
+        # Fall back to original processing
 
 
 @financial_router.message(Command("expense"))
@@ -103,12 +370,15 @@ async def cmd_expense(message: Message, state: FSMContext):
             user_id=user.id
         )
 
-        # Store confirmation for callback
-        confirmation_id = f"{user.id}_{int(datetime.now().timestamp())}"
+        # Store confirmation for callback with more unique ID
+        import time
+        confirmation_id = f"{user.id}_{int(time.time() * 1000)}"  # Use milliseconds for better uniqueness
         pending_confirmations[confirmation_id] = {
             "confirmation": confirmation,
-            "user_id": user.id
+            "user_id": user.id,
+            "created_at": datetime.now()
         }
+        logger.info(f"Stored confirmation with ID: {confirmation_id}")
 
         # Send confirmation message with buttons
         keyboard = _build_expense_confirmation_keyboard(confirmation_id, confirmation)
@@ -168,12 +438,23 @@ async def cmd_budget(message: Message, state: FSMContext):
 async def handle_expense_callback(callback: CallbackQuery):
     """Handle expense confirmation callbacks."""
     try:
-        data_parts = callback.data.split("_")
+        data_parts = callback.data.split("_", 2)  # Split only on first 2 underscores
         action = data_parts[1]  # confirm, category, necessity
-        confirmation_id = data_parts[2]
+        confirmation_id = data_parts[2]  # This will be the full confirmation_id including underscores
+
+        logger.info(f"Callback received: action={action}, confirmation_id={confirmation_id}")
+
+        # Clean up any expired confirmations
+        cleanup_expired_confirmations()
+
+        logger.info(f"Available confirmations: {list(pending_confirmations.keys())}")
 
         if confirmation_id not in pending_confirmations:
-            await callback.answer("❌ Confirmation expired. Please try again.")
+            logger.warning(f"Confirmation ID {confirmation_id} not found in pending confirmations")
+            # Try to detect language for error message
+            language = "es" if callback.from_user.language_code and callback.from_user.language_code.startswith('es') else "en"
+            error_msg = "❌ Confirmación expiró. Intenta de nuevo." if language == "es" else "❌ Confirmation expired. Please try again."
+            await callback.answer(error_msg)
             return
 
         pending_data = pending_confirmations[confirmation_id]
@@ -435,6 +716,180 @@ def _format_budget_response(budget_update: Dict[str, Any]) -> str:
             response += f"• {note}\n"
 
     return response
+
+
+async def _parse_text_expense(text: str, user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Parse text message to extract expense information.
+
+    This is similar to _parse_voice_expense but optimized for typed text.
+
+    Args:
+        text: The text message
+        user_id: User identifier
+
+    Returns:
+        Dictionary with expense data or None if parsing fails
+    """
+    # Reuse the voice parsing logic since text and voice expenses have similar patterns
+    return await _parse_voice_expense(text, user_id)
+
+
+async def _parse_voice_expense(transcription: str, user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Parse voice transcription to extract expense information.
+
+    Args:
+        transcription: The transcribed text from voice message
+        user_id: User identifier
+
+    Returns:
+        Dictionary with expense data or None if parsing fails
+    """
+    import re
+    from decimal import Decimal
+
+    text = transcription.lower().strip()
+
+    # Currency patterns - support both symbols and names
+    # Order matters: check specific tokens before generic ones
+    currency_patterns = {
+        'usdt': r'(?:usdt|tether)',  # Check USDT before USD
+        'btc': r'(?:btc|bitcoin)',
+        'usd': r'(?:usd|dollars?|bucks?|\$)',
+        'ars': r'(?:ars|pesos?|peso)',
+        'eur': r'(?:eur|euros?)',
+    }
+
+    # Amount patterns - support various formats
+    amount_patterns = [
+        r'(\d+(?:[.,]\d+)?)\s*k\s*({currencies})',  # "50k USD"
+        r'(\d+(?:[.,]\d+)?)\s*({currencies})',      # "50 USD"
+        r'({currencies})\s*(\d+(?:[.,]\d+)?)',      # "USD 50"
+        r'(\d+(?:[.,]\d+)?)(?:\s*(?:dollars?|pesos?|euros?))', # "50 dollars"
+    ]
+
+    # Create combined currency pattern
+    all_currencies = '|'.join(currency_patterns.values())
+
+    amount = None
+    currency = 'USD'  # Default currency
+
+    # Try to find amount and currency
+    for pattern in amount_patterns:
+        pattern_with_currencies = pattern.format(currencies=all_currencies)
+        match = re.search(pattern_with_currencies, text, re.IGNORECASE)
+
+        if match:
+            groups = match.groups()
+
+            # Extract amount (could be in group 1 or 2)
+            amount_str = None
+            currency_str = None
+
+            for group in groups:
+                if re.match(r'\d+(?:[.,]\d+)?', group):
+                    amount_str = group.replace(',', '.')
+                else:
+                    # Check if this group contains currency info
+                    for curr_code, pattern in currency_patterns.items():
+                        if re.search(pattern, group, re.IGNORECASE):
+                            currency_str = group.lower()
+                            currency = curr_code.upper()
+                            break
+
+            if amount_str:
+                try:
+                    amount = float(amount_str)
+
+                    # Handle "k" multiplier
+                    if 'k' in match.group(0).lower():
+                        amount *= 1000
+
+                    # If no currency detected in groups, search the whole match
+                    if currency == 'USD':  # Still default
+                        for curr_code, pattern in currency_patterns.items():
+                            if re.search(pattern, match.group(0), re.IGNORECASE):
+                                currency = curr_code.upper()
+                                break
+
+                    break
+                except ValueError:
+                    continue
+
+    if not amount:
+        return None
+
+    # Extract merchant/location information
+    merchant = ""
+    note = ""
+
+    # Common spending phrases in English and Spanish
+    spending_patterns = [
+        r'(?:spent|paid|bought|purchased)\s+.*?(?:at|from|in)\s+([^,.]+)',  # "spent 50 at Starbucks"
+        r'(?:gasté|pagué|compré)\s+.*?(?:en|de)\s+([^,.]+)',               # "gasté 50 en Starbucks"
+        r'(?:at|en)\s+([^,.]+)',                                           # "at Starbucks"
+        r'(?:from|de)\s+([^,.]+)',                                         # "from my account"
+        r'(?:for|para)\s+([^,.]+)',                                        # "for coffee"
+    ]
+
+    for pattern in spending_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            extracted = match.group(1).strip()
+
+            # Skip if it's just a currency or amount
+            if not re.match(r'^\d+|usd|ars|eur|dollars?|pesos?', extracted, re.IGNORECASE):
+                if not merchant:
+                    merchant = extracted
+                elif extracted not in merchant.lower():
+                    note = extracted
+                break
+
+    # If no merchant found, try to extract from general context
+    if not merchant:
+        # Look for standalone words that could be merchants
+        words = text.split()
+        potential_merchants = []
+
+        for word in words:
+            # Skip common words and currencies
+            if (len(word) > 2 and
+                word not in ['the', 'and', 'for', 'from', 'with', 'spent', 'paid', 'bought',
+                           'gasté', 'pagué', 'compré', 'para', 'con', 'desde'] and
+                not re.match(r'^\d+|usd|ars|eur', word, re.IGNORECASE)):
+                potential_merchants.append(word.title())
+
+        if potential_merchants:
+            merchant = ' '.join(potential_merchants[:2])  # Take first 2 words
+
+    # Create note from remaining context
+    if not note:
+        # Look for descriptive phrases
+        descriptive_patterns = [
+            r'(?:for|para)\s+([^,.]+)',
+            r'(?:buying|comprando)\s+([^,.]+)',
+        ]
+
+        for pattern in descriptive_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                note = match.group(1).strip()
+                break
+
+    # If still no merchant, use a generic description
+    if not merchant:
+        merchant = "Voice Expense"
+        note = transcription[:50] + "..." if len(transcription) > 50 else transcription
+
+    return {
+        "amount": amount,
+        "currency": currency,
+        "date": None,  # Will use today
+        "merchant": merchant,
+        "note": note,
+        "user_id": user_id
+    }
 
 
 async def _create_confirmed_transaction(confirmation: Dict[str, Any], user_id: int) -> None:
