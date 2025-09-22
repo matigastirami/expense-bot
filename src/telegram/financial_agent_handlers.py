@@ -245,34 +245,29 @@ async def handle_voice_expense(message: Message, state: FSMContext):
         await message.answer(error_msg)
 
 
-@financial_router.message(F.text & ~F.text.startswith("/"))
+# DISABLED: Interferes with Spanish processing
+# @financial_router.message(F.text & ~F.text.startswith("/"))
 async def handle_text_expense(message: Message, state: FSMContext):
     """Handle text messages that might be expenses for enhanced processing."""
+    # DISABLED: Return early to prevent interference
+    return
     try:
-        # Check if this looks like an expense message
+        # Check if this looks like an expense message, but ONLY process very specific patterns
+        # to avoid interfering with the original agent that handles Spanish well
         text = message.text.lower()
-        expense_indicators = [
-            # English
-            'spent', 'paid', 'bought', 'cost', 'expense', 'purchase',
-            # Spanish
-            'gasté', 'pagué', 'compré', 'costó', 'gasto', 'compra',
-            # Currency symbols and amounts
-            '$', 'usd', 'ars', 'eur', 'pesos', 'dollars', 'euros'
+
+        # Only process messages that explicitly mention specific analysis keywords
+        # This prevents interference with the original agent's Spanish processing
+        analysis_indicators = [
+            'analyze', 'análisis', 'analizar', 'categorize', 'categorizar',
+            'budget', 'presupuesto', 'classify', 'clasificar'
         ]
 
-        # Also check for amount patterns
-        import re
-        amount_patterns = [
-            r'\d+\s*(?:usd|dollars?|ars|pesos?|eur|euros?)',
-            r'(?:\$|USD|ARS|EUR)\s*\d+',
-            r'\d+\s*(?:k|thousand)',
-        ]
+        # Check for explicit Financial Analysis Agent keywords
+        should_use_financial_agent = any(indicator in text for indicator in analysis_indicators)
 
-        has_expense_indicator = any(indicator in text for indicator in expense_indicators)
-        has_amount_pattern = any(re.search(pattern, text, re.IGNORECASE) for pattern in amount_patterns)
-
-        # If this looks like an expense, process with Financial Analysis Agent
-        if has_expense_indicator or has_amount_pattern:
+        # If this doesn't contain analysis keywords, let the original agent handle it
+        if not should_use_financial_agent:
             # Get user from database
             async with async_session_maker() as session:
                 user = await UserCRUD.get_by_telegram_id(session, str(message.from_user.id))
