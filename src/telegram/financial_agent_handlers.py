@@ -288,15 +288,25 @@ async def handle_text_expense(message: Message, state: FSMContext):
                 processing_msg = await message.answer("💭 Processing expense...")
 
             # Parse the text for expense information
+            logger.info(f"Parsing text expense: '{message.text}' for user {user.id}")
             expense_data = await _parse_text_expense(message.text, user.id)
+            logger.info(f"Parsed expense data: {expense_data}")
 
             if not expense_data:
+                logger.info("No expense data extracted, falling back to original bot processing")
                 # Delete processing message and fall back to original bot processing
                 await processing_msg.delete()
                 return
 
             # Process the expense using the financial agent
-            confirmation = await financial_agent.process_expense_confirmation(**expense_data)
+            logger.info(f"Processing expense data: {expense_data}")
+            try:
+                confirmation = await financial_agent.process_expense_confirmation(**expense_data)
+                logger.info(f"Expense confirmation received: {confirmation.get('type', 'unknown')}")
+            except Exception as e:
+                logger.error(f"Error in process_expense_confirmation: {e}")
+                await processing_msg.edit_text(f"❌ Error al procesar el gasto: {str(e)}")
+                return
 
             # Store confirmation for callback with more unique ID
             import time
@@ -331,7 +341,18 @@ async def handle_text_expense(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Error in text expense handler: {e}")
-        # Fall back to original processing
+        # Show error to user instead of silently failing
+        try:
+            if 'processing_msg' in locals():
+                await processing_msg.edit_text(f"❌ Error procesando gasto: {str(e)}")
+            else:
+                await message.answer(f"❌ Error procesando gasto: {str(e)}")
+        except:
+            # If even error reporting fails, try basic message
+            try:
+                await message.answer("❌ Error interno procesando gasto")
+            except:
+                pass
 
 
 @financial_router.message(Command("expense"))
