@@ -32,10 +32,16 @@ class AudioTranscriptionService:
         self.api_url = "https://api.openai.com/v1/audio/transcriptions"
 
         if not self.api_key:
-            logger.warning("⚠️ No OpenAI API key found. Audio transcription will not work.")
-            logger.warning("   Set OPENAI_API_KEY environment variable to enable audio features.")
+            logger.warning(
+                "⚠️ No OpenAI API key found. Audio transcription will not work."
+            )
+            logger.warning(
+                "   Set OPENAI_API_KEY environment variable to enable audio features."
+            )
 
-    async def transcribe_voice_message(self, voice_file_path: str, language: Optional[str] = None) -> Optional[str]:
+    async def transcribe_voice_message(
+        self, voice_file_path: str, language: Optional[str] = None
+    ) -> Optional[str]:
         """
         Transcribe a voice message file to text.
 
@@ -56,47 +62,71 @@ class AudioTranscriptionService:
                 data = aiohttp.FormData()
 
                 # Add the audio file
-                async with aiofiles.open(voice_file_path, 'rb') as audio_file:
+                async with aiofiles.open(voice_file_path, "rb") as audio_file:
                     audio_content = await audio_file.read()
-                    data.add_field('file', audio_content, filename='voice.ogg', content_type='audio/ogg')
+                    data.add_field(
+                        "file",
+                        audio_content,
+                        filename="voice.ogg",
+                        content_type="audio/ogg",
+                    )
 
                 # Add model parameter
-                data.add_field('model', 'whisper-1')
+                data.add_field("model", "whisper-1")
 
                 # Add language hint if provided
                 if language:
-                    data.add_field('language', language)
+                    data.add_field("language", language)
+
+                    # Add prompt to force Whisper to stay in the source language
+                    # This prevents Whisper from translating Spanish -> English
+                    if language == "es":
+                        data.add_field(
+                            "prompt",
+                            "Transcribir en español. Gasté pesos en el comercio.",
+                        )
+                    elif language == "en":
+                        data.add_field(
+                            "prompt",
+                            "Transcribe in English. I spent dollars at the store.",
+                        )
 
                 # Add response format
-                data.add_field('response_format', 'text')
+                data.add_field("response_format", "text")
 
                 # Prepare headers
-                headers = {
-                    'Authorization': f'Bearer {self.api_key}'
-                }
+                headers = {"Authorization": f"Bearer {self.api_key}"}
 
                 # Make the API request
-                async with session.post(self.api_url, data=data, headers=headers) as response:
+                async with session.post(
+                    self.api_url, data=data, headers=headers
+                ) as response:
                     if response.status == 200:
                         transcription = await response.text()
                         transcription = transcription.strip()
 
                         if transcription:
-                            logger.info(f"✅ Audio transcribed successfully: '{transcription[:50]}...'")
+                            logger.info(
+                                f"✅ Audio transcribed successfully: '{transcription[:50]}...'"
+                            )
                             return transcription
                         else:
                             logger.warning("⚠️ Transcription was empty")
                             return None
                     else:
                         error_text = await response.text()
-                        logger.error(f"❌ Transcription API error {response.status}: {error_text}")
+                        logger.error(
+                            f"❌ Transcription API error {response.status}: {error_text}"
+                        )
                         return None
 
         except Exception as e:
             logger.error(f"❌ Error during audio transcription: {e}")
             return None
 
-    async def download_and_transcribe_telegram_voice(self, bot, voice: "Voice", language: Optional[str] = None) -> Optional[str]:
+    async def download_and_transcribe_telegram_voice(
+        self, bot, voice: "Voice", language: Optional[str] = None
+    ) -> Optional[str]:
         """
         Download a Telegram voice message and transcribe it.
 
@@ -117,15 +147,19 @@ class AudioTranscriptionService:
             file_info = await bot.get_file(voice.file_id)
 
             # Create temporary file
-            with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_file:
+            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as temp_file:
                 temp_file_path = temp_file.name
 
             # Download the file
             await bot.download_file(file_info.file_path, temp_file_path)
-            logger.info(f"📥 Downloaded voice message: {voice.duration}s, {voice.file_size} bytes")
+            logger.info(
+                f"📥 Downloaded voice message: {voice.duration}s, {voice.file_size} bytes"
+            )
 
             # Transcribe the audio
-            transcription = await self.transcribe_voice_message(temp_file_path, language)
+            transcription = await self.transcribe_voice_message(
+                temp_file_path, language
+            )
 
             return transcription
 
