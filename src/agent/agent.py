@@ -34,8 +34,14 @@ class FinanceAgent:
         self.db_tool = DbTool()
         self.fx_tool = FxTool()
 
+        # Initialize FinancialAnalysisAgent for expense classification
+        from src.agent.financial_agent import FinancialAnalysisAgent
+
+        self.financial_agent = FinancialAnalysisAgent()
+
         # Load system prompt
         import os
+
         current_dir = os.path.dirname(os.path.abspath(__file__))
         prompt_path = os.path.join(current_dir, "prompts", "system.md")
         with open(prompt_path, "r") as f:
@@ -52,7 +58,11 @@ class FinanceAgent:
             self._usage_tracker = tracker
             try:
                 # Detect language and validate support
-                from src.utils.language import validate_supported_language, Messages, detect_language
+                from src.utils.language import (
+                    validate_supported_language,
+                    Messages,
+                    detect_language,
+                )
 
                 is_supported, detected_lang = validate_supported_language(message)
                 if not is_supported:
@@ -80,16 +90,19 @@ class FinanceAgent:
 
             except Exception as e:
                 # Return error in detected language
-                lang = getattr(self, 'user_language', detect_language(message))
+                lang = getattr(self, "user_language", detect_language(message))
                 return Messages.get("error", "general_error", lang, error=str(e)), None
 
     def _handle_general_message(self, message: str) -> str:
         """Handle general messages that aren't transactions or queries."""
         from src.utils.language import Messages
-        lang = getattr(self, 'user_language', 'en')
+
+        lang = getattr(self, "user_language", "en")
         return Messages.get("help", "general_help", lang)
 
-    async def _extract_transaction_intent(self, message: str) -> Optional[ParsedTransactionIntent]:
+    async def _extract_transaction_intent(
+        self, message: str
+    ) -> Optional[ParsedTransactionIntent]:
         """Extract transaction intent using structured output."""
         extraction_prompt = f"""
         Analyze this message in Spanish or English and determine if it describes a financial transaction.
@@ -167,8 +180,21 @@ class FinanceAgent:
             "currency_to": "string or null",
             "exchange_rate": number or null,
             "date": "ISO date string or null",
+            "merchant": "string or null",
             "description": "string or null"
         }}
+
+        CRITICAL: For EXPENSES, separate merchant from description:
+        - merchant: The PLACE/STORE where money was spent (supermercado Becerra, almacén Yoli, Starbucks)
+        - description: WHAT was purchased (comida, pasta frola, café, alquiler)
+
+        Merchant extraction patterns:
+        - "en [item] en [place]" → merchant: "[place]", description: "[item]"
+        - "en [place] en [item]" → merchant: "[place]", description: "[item]"
+        - "at [place] for [item]" → merchant: "[place]", description: "[item]"
+        - "from [place]" → merchant: "[place]"
+        - If only generic item: merchant: null, description: "[item]"
+        - If only place: merchant: "[place]", description: null
 
         Extract descriptions from context (prioritize meaningful context over generic terms):
         - "en el supermercado" → description: "supermercado"
@@ -195,7 +221,7 @@ class FinanceAgent:
         - "Gasté 10 pesos en comida desde mercadopago el 05/08" → expense, 10, "ARS", account_from: "mercadopago", date: "2025-08-05", description: "comida"
         - "Gasté 400 ARS en el supermercado" → expense, 400, ARS, account_from: null, description: "supermercado"
         - "Gasté $400 de mercadopago" → expense, 400, "$", account_from: "mercadopago", description: "gasto"
-        - "Gasté 426 mil ARS en supermercado becerra de mi cuenta de AstroPay" → expense, 426000, ARS, account_from: "AstroPay", description: "supermercado becerra"
+        - "Gasté 426 mil ARS en supermercado becerra de mi cuenta de AstroPay" → expense, 426000, ARS, account_from: "AstroPay", merchant: "supermercado becerra", description: null
         - "Le di 250 USD a Tami desde la cuenta de AstroPay" → expense, 250, USD, account_from: "AstroPay", description: "250 USD a Tami"
         - "Pagué 50000 ARS de alquiler desde Galicia" → expense, 50000, ARS, account_from: "Galicia", description: "alquiler"
         - "Gasté 50 mil ARS en flete de sillón en efectivo" → expense, 50000, ARS, account_from: "Efectivo", description: "flete de sillón"
@@ -206,13 +232,16 @@ class FinanceAgent:
         """
 
         try:
-            response = await self.llm.ainvoke([{"role": "user", "content": extraction_prompt}])
+            response = await self.llm.ainvoke(
+                [{"role": "user", "content": extraction_prompt}]
+            )
             content = response.content.strip()
 
             # Track usage if tracker is available
-            if hasattr(self, '_usage_tracker') and self._usage_tracker:
+            if hasattr(self, "_usage_tracker") and self._usage_tracker:
                 from src.utils.credits import log_usage
-                usage_data = getattr(response, 'usage_metadata', None)
+
+                usage_data = getattr(response, "usage_metadata", None)
                 log_usage(usage_data, "Transaction intent extraction")
                 if usage_data:
                     self._usage_tracker.add_usage(usage_data)
@@ -249,11 +278,15 @@ class FinanceAgent:
                             current_date = datetime.now()
 
                             # Try current year first
-                            candidate_date = datetime(current_year, int(month), int(day))
+                            candidate_date = datetime(
+                                current_year, int(month), int(day)
+                            )
 
                             # If the date would be in the future, use previous year
                             if candidate_date > current_date:
-                                candidate_date = datetime(current_year - 1, int(month), int(day))
+                                candidate_date = datetime(
+                                    current_year - 1, int(month), int(day)
+                                )
 
                             parsed_date = candidate_date
                 except (ValueError, IndexError):
@@ -261,11 +294,10 @@ class FinanceAgent:
 
                 # If manual parsing failed, fall back to dateparser
                 if not parsed_date:
-                    parsed_date = dateparser.parse(data["date"], languages=['es', 'en'])
+                    parsed_date = dateparser.parse(data["date"], languages=["es", "en"])
 
                 if parsed_date:
                     data["date"] = parsed_date
-
 
             return ParsedTransactionIntent(**data)
 
@@ -340,13 +372,16 @@ class FinanceAgent:
         """
 
         try:
-            response = await self.llm.ainvoke([{"role": "user", "content": extraction_prompt}])
+            response = await self.llm.ainvoke(
+                [{"role": "user", "content": extraction_prompt}]
+            )
             content = response.content.strip()
 
             # Track usage if tracker is available
-            if hasattr(self, '_usage_tracker') and self._usage_tracker:
+            if hasattr(self, "_usage_tracker") and self._usage_tracker:
                 from src.utils.credits import log_usage
-                usage_data = getattr(response, 'usage_metadata', None)
+
+                usage_data = getattr(response, "usage_metadata", None)
                 log_usage(usage_data, "Query intent extraction")
                 if usage_data:
                     self._usage_tracker.add_usage(usage_data)
@@ -379,6 +414,7 @@ class FinanceAgent:
             # Use advanced date parsing if date_expression is provided
             if data.get("date_expression"):
                 from src.utils.date_utils import parse_flexible_date
+
                 date_range = parse_flexible_date(data["date_expression"])
                 if date_range:
                     data["start_date"] = date_range[0]
@@ -390,44 +426,68 @@ class FinanceAgent:
             print(f"Error extracting query intent: {e}")
             return None
 
-    async def _handle_transaction(self, intent: ParsedTransactionIntent, user_id: int) -> str:
+    async def _handle_transaction(
+        self, intent: ParsedTransactionIntent, user_id: int
+    ) -> str:
         """Handle transaction processing."""
         try:
             # Find similar existing accounts or normalize names
             if intent.account_from:
-                intent.account_from = await self._find_similar_account(intent.account_from, user_id)
+                intent.account_from = await self._find_similar_account(
+                    intent.account_from, user_id
+                )
             if intent.account_to:
-                intent.account_to = await self._find_similar_account(intent.account_to, user_id)
+                intent.account_to = await self._find_similar_account(
+                    intent.account_to, user_id
+                )
 
             # Resolve generic currency symbols based on account's primary currency
-            intent.currency = await self._resolve_currency_symbol(intent.currency, intent.account_from, intent.account_to, user_id)
+            intent.currency = await self._resolve_currency_symbol(
+                intent.currency, intent.account_from, intent.account_to, user_id
+            )
             if intent.currency == "ERROR_PESO_MISMATCH":
                 from src.utils.language import Messages
-                lang = getattr(self, 'user_language', 'es')
-                if lang == 'es':
-                    account_name = intent.account_from or intent.account_to or "la cuenta"
+
+                lang = getattr(self, "user_language", "es")
+                if lang == "es":
+                    account_name = (
+                        intent.account_from or intent.account_to or "la cuenta"
+                    )
                     return f"❌ Error: La cuenta {account_name} no maneja pesos. Por favor especifica la moneda correcta (ej: USD, USDT, etc.)"
                 else:
-                    account_name = intent.account_from or intent.account_to or "the account"
+                    account_name = (
+                        intent.account_from or intent.account_to or "the account"
+                    )
                     return f"❌ Error: {account_name} doesn't handle pesos. Please specify the correct currency (e.g., USD, USDT, etc.)"
 
             if intent.currency_to:
-                intent.currency_to = await self._resolve_currency_symbol(intent.currency_to, intent.account_from, intent.account_to, user_id)
+                intent.currency_to = await self._resolve_currency_symbol(
+                    intent.currency_to, intent.account_from, intent.account_to, user_id
+                )
                 if intent.currency_to == "ERROR_PESO_MISMATCH":
                     from src.utils.language import Messages
-                    lang = getattr(self, 'user_language', 'es')
-                    if lang == 'es':
-                        account_name = intent.account_from or intent.account_to or "la cuenta"
+
+                    lang = getattr(self, "user_language", "es")
+                    if lang == "es":
+                        account_name = (
+                            intent.account_from or intent.account_to or "la cuenta"
+                        )
                         return f"❌ Error: La cuenta {account_name} no maneja pesos. Por favor especifica la moneda correcta (ej: USD, USDT, etc.)"
                     else:
-                        account_name = intent.account_from or intent.account_to or "the account"
+                        account_name = (
+                            intent.account_from or intent.account_to or "the account"
+                        )
                         return f"❌ Error: {account_name} doesn't handle pesos. Please specify the correct currency (e.g., USD, USDT, etc.)"
 
             # If exchange rate is needed but not provided, fetch it
-            if (intent.intent == TransactionIntent.CONVERSION and
-                intent.currency_to and not intent.exchange_rate):
-
-                rate = await self.fx_tool.get_rate_value(intent.currency, intent.currency_to)
+            if (
+                intent.intent == TransactionIntent.CONVERSION
+                and intent.currency_to
+                and not intent.exchange_rate
+            ):
+                rate = await self.fx_tool.get_rate_value(
+                    intent.currency, intent.currency_to
+                )
                 if rate:
                     intent.exchange_rate = rate
                     if not intent.amount_to:
@@ -440,6 +500,63 @@ class FinanceAgent:
             if not description:
                 description = self._generate_transaction_description(intent)
 
+            # FOR EXPENSES: Use FinancialAnalysisAgent for category classification and necessity detection
+            if intent.intent == TransactionIntent.EXPENSE:
+                # Use the merchant field from intent if available, otherwise empty
+                merchant = intent.merchant or ""
+
+                # Use description as note
+                note = description or ""
+
+                # Get the detected language from the agent
+                detected_language = getattr(self, "user_language", "en")
+
+                # Use FinancialAnalysisAgent to process the expense with classification
+                expense_confirmation = (
+                    await self.financial_agent.process_expense_confirmation(
+                        amount=float(intent.amount),
+                        currency=intent.currency,
+                        date=intent.date,
+                        merchant=merchant,
+                        note=note,
+                        user_id=user_id,
+                        language=detected_language,
+                    )
+                )
+
+                # Build transaction data with classification information
+                transaction_data = {
+                    "transaction_type": intent.intent.value,
+                    "amount": float(intent.amount),
+                    "currency": intent.currency,
+                    "account_from": intent.account_from,
+                    "account_to": intent.account_to,
+                    "amount_to": float(intent.amount_to) if intent.amount_to else None,
+                    "currency_to": intent.currency_to,
+                    "exchange_rate": float(intent.exchange_rate)
+                    if intent.exchange_rate
+                    else None,
+                    "description": description,
+                    "date": intent.date,
+                    "user_id": user_id,
+                    # Add classification data from FinancialAnalysisAgent
+                    "category": expense_confirmation["classification"]["category"],
+                    "is_necessary": expense_confirmation["classification"][
+                        "is_necessary"
+                    ],
+                    "confidence": expense_confirmation["classification"]["confidence"],
+                    "expense_confirmation": expense_confirmation,  # Store full confirmation for later use
+                }
+
+                # Return confirmation message with classification
+                return (
+                    self._format_expense_confirmation_message(
+                        transaction_data, expense_confirmation
+                    ),
+                    transaction_data,
+                )
+
+            # FOR NON-EXPENSES: Use regular transaction processing
             # Create transaction data for confirmation
             transaction_data = {
                 "transaction_type": intent.intent.value,
@@ -449,19 +566,30 @@ class FinanceAgent:
                 "account_to": intent.account_to,
                 "amount_to": float(intent.amount_to) if intent.amount_to else None,
                 "currency_to": intent.currency_to,
-                "exchange_rate": float(intent.exchange_rate) if intent.exchange_rate else None,
+                "exchange_rate": float(intent.exchange_rate)
+                if intent.exchange_rate
+                else None,
                 "description": description,
                 "date": intent.date,
-                "user_id": user_id
+                "user_id": user_id,
             }
 
             # Return confirmation message with transaction data
-            return (self._format_confirmation_message(transaction_data), transaction_data)
+            return (
+                self._format_confirmation_message(transaction_data),
+                transaction_data,
+            )
 
         except Exception as e:
             return f"❌ Error processing transaction: {str(e)}"
 
-    async def _resolve_currency_symbol(self, currency: str, account_from: Optional[str], account_to: Optional[str], user_id: int) -> str:
+    async def _resolve_currency_symbol(
+        self,
+        currency: str,
+        account_from: Optional[str],
+        account_to: Optional[str],
+        user_id: int,
+    ) -> str:
         """
         Resolve generic currency symbols and names (like $, pesos, dollars) to actual currency codes based on account's primary currency.
         For expenses, check account_from. For income, check account_to.
@@ -473,9 +601,28 @@ class FinanceAgent:
         currency_lower = currency.lower().strip()
 
         # Generic currency symbols and names that need resolution
-        generic_currencies = ["$", "₱", "€", "£", "¥", "pesos", "peso", "dollars", "dollar", "dolares", "dolar"]
+        generic_currencies = [
+            "$",
+            "₱",
+            "€",
+            "£",
+            "¥",
+            "pesos",
+            "peso",
+            "dollars",
+            "dollar",
+            "dolares",
+            "dolar",
+        ]
 
-        if currency in ["$", "₱", "€", "£", "¥"] or currency_lower in ["pesos", "peso", "dollars", "dollar", "dolares", "dolar"]:
+        if currency in ["$", "₱", "€", "£", "¥"] or currency_lower in [
+            "pesos",
+            "peso",
+            "dollars",
+            "dollar",
+            "dolares",
+            "dolar",
+        ]:
             # Determine which account to check based on transaction type
             account_to_check = None
             if account_from:  # For expenses/transfers from an account
@@ -486,16 +633,25 @@ class FinanceAgent:
             if account_to_check:
                 # Get the account's primary currency from its balances
                 async with async_session_maker() as session:
-                    account = await AccountCRUD.get_by_name(session, user_id, account_to_check)
+                    account = await AccountCRUD.get_by_name(
+                        session, user_id, account_to_check
+                    )
                     if account and account.balances:
                         # Find the balance with the highest amount (primary currency)
                         primary_balance = max(account.balances, key=lambda b: b.balance)
                         resolved_currency = primary_balance.currency
 
                         # Map generic symbols and names to specific currencies based on account's currencies
-                        if currency == "$" or currency_lower in ["dollars", "dollar", "dolares", "dolar"]:
+                        if currency == "$" or currency_lower in [
+                            "dollars",
+                            "dollar",
+                            "dolares",
+                            "dolar",
+                        ]:
                             # Check what dollar currencies the account has
-                            account_currencies = [b.currency for b in account.balances if b.balance > 0]
+                            account_currencies = [
+                                b.currency for b in account.balances if b.balance > 0
+                            ]
 
                             # Priority order for $ symbol: USD > ARS > others
                             if "USD" in account_currencies:
@@ -506,10 +662,19 @@ class FinanceAgent:
                                 return "USD"  # Default assumption for $ symbol
                         elif currency_lower in ["pesos", "peso"]:
                             # "pesos" should resolve to account's primary currency if it's a peso currency
-                            account_currencies = [b.currency for b in account.balances if b.balance > 0]
+                            account_currencies = [
+                                b.currency for b in account.balances if b.balance > 0
+                            ]
 
                             # Check if account has peso currencies (ARS, MXN, COP, etc.)
-                            peso_currencies = ["ARS", "MXN", "COP", "CLP", "UYU", "PEN"]  # Common peso currencies
+                            peso_currencies = [
+                                "ARS",
+                                "MXN",
+                                "COP",
+                                "CLP",
+                                "UYU",
+                                "PEN",
+                            ]  # Common peso currencies
                             for peso_curr in peso_currencies:
                                 if peso_curr in account_currencies:
                                     return peso_curr
@@ -517,7 +682,8 @@ class FinanceAgent:
                             # If no peso currency found but account has other currencies, this might be an error
                             if account_currencies:
                                 from src.utils.language import Messages
-                                lang = getattr(self, 'user_language', 'es')
+
+                                lang = getattr(self, "user_language", "es")
                                 # Return an error indicator - we'll handle this in the calling function
                                 return "ERROR_PESO_MISMATCH"
                             else:
@@ -531,10 +697,17 @@ class FinanceAgent:
                         elif currency == "₱":
                             return "PHP"
                         else:
-                            return resolved_currency  # Return account's primary currency
+                            return (
+                                resolved_currency  # Return account's primary currency
+                            )
 
             # If no account specified or account not found, return defaults
-            if currency == "$" or currency_lower in ["dollars", "dollar", "dolares", "dolar"]:
+            if currency == "$" or currency_lower in [
+                "dollars",
+                "dollar",
+                "dolares",
+                "dolar",
+            ]:
                 return "USD"
             elif currency_lower in ["pesos", "peso"]:
                 return "ARS"  # Default assumption for pesos when no account context
@@ -633,16 +806,22 @@ class FinanceAgent:
 
             # Check for exact matches first
             for account in accounts:
-                normalized_existing = account.name.lower().replace(" ", "").replace("-", "")
+                normalized_existing = (
+                    account.name.lower().replace(" ", "").replace("-", "")
+                )
                 if normalized_input == normalized_existing:
                     return account.name
 
             # Check for fuzzy matches (contains or very similar)
             for account in accounts:
-                normalized_existing = account.name.lower().replace(" ", "").replace("-", "")
+                normalized_existing = (
+                    account.name.lower().replace(" ", "").replace("-", "")
+                )
                 # If input is contained in existing or vice versa
-                if (normalized_input in normalized_existing or
-                    normalized_existing in normalized_input):
+                if (
+                    normalized_input in normalized_existing
+                    or normalized_existing in normalized_input
+                ):
                     # Prefer the existing account name
                     return account.name
 
@@ -652,9 +831,10 @@ class FinanceAgent:
     def _format_confirmation_message(self, transaction_data: dict) -> str:
         """Format confirmation message for user approval."""
         from src.utils.language import Messages
-        lang = getattr(self, 'user_language', 'en')
 
-        if lang == 'es':
+        lang = getattr(self, "user_language", "en")
+
+        if lang == "es":
             lines = ["🔔 <b>Confirmación de transacción</b>", ""]
 
             # Transaction type
@@ -662,26 +842,32 @@ class FinanceAgent:
                 "income": "💰 Ingreso",
                 "expense": "💸 Gasto",
                 "transfer": "🔄 Transferencia",
-                "conversion": "💱 Conversión"
+                "conversion": "💱 Conversión",
             }
-            lines.append(f"<b>Tipo:</b> {type_map.get(transaction_data['transaction_type'], 'Transacción')}")
+            lines.append(
+                f"<b>Tipo:</b> {type_map.get(transaction_data['transaction_type'], 'Transacción')}"
+            )
 
             # Amount
-            amount = transaction_data['amount']
-            currency = transaction_data['currency']
+            amount = transaction_data["amount"]
+            currency = transaction_data["currency"]
             lines.append(f"<b>Monto:</b> {amount:,.0f} {currency}")
 
             # Accounts
-            if transaction_data['account_from']:
+            if transaction_data["account_from"]:
                 lines.append(f"<b>Desde:</b> {transaction_data['account_from']}")
-            if transaction_data['account_to']:
+            if transaction_data["account_to"]:
                 lines.append(f"<b>Hacia:</b> {transaction_data['account_to']}")
 
             # For conversions
-            if transaction_data['currency_to'] and transaction_data['amount_to']:
-                lines.append(f"<b>Resultado:</b> {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}")
-                if transaction_data['exchange_rate']:
-                    lines.append(f"<b>Tasa:</b> {transaction_data['exchange_rate']:,.2f}")
+            if transaction_data["currency_to"] and transaction_data["amount_to"]:
+                lines.append(
+                    f"<b>Resultado:</b> {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}"
+                )
+                if transaction_data["exchange_rate"]:
+                    lines.append(
+                        f"<b>Tasa:</b> {transaction_data['exchange_rate']:,.2f}"
+                    )
 
             # Description
             lines.append(f"<b>Descripción:</b> {transaction_data['description']}")
@@ -694,38 +880,136 @@ class FinanceAgent:
                 "income": "💰 Income",
                 "expense": "💸 Expense",
                 "transfer": "🔄 Transfer",
-                "conversion": "💱 Conversion"
+                "conversion": "💱 Conversion",
             }
-            lines.append(f"<b>Type:</b> {type_map.get(transaction_data['transaction_type'], 'Transaction')}")
+            lines.append(
+                f"<b>Type:</b> {type_map.get(transaction_data['transaction_type'], 'Transaction')}"
+            )
 
             # Amount
-            amount = transaction_data['amount']
-            currency = transaction_data['currency']
+            amount = transaction_data["amount"]
+            currency = transaction_data["currency"]
             lines.append(f"<b>Amount:</b> {amount:,.0f} {currency}")
 
             # Accounts
-            if transaction_data['account_from']:
+            if transaction_data["account_from"]:
                 lines.append(f"<b>From:</b> {transaction_data['account_from']}")
-            if transaction_data['account_to']:
+            if transaction_data["account_to"]:
                 lines.append(f"<b>To:</b> {transaction_data['account_to']}")
 
             # For conversions
-            if transaction_data['currency_to'] and transaction_data['amount_to']:
-                lines.append(f"<b>Result:</b> {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}")
-                if transaction_data['exchange_rate']:
-                    lines.append(f"<b>Rate:</b> {transaction_data['exchange_rate']:,.2f}")
+            if transaction_data["currency_to"] and transaction_data["amount_to"]:
+                lines.append(
+                    f"<b>Result:</b> {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}"
+                )
+                if transaction_data["exchange_rate"]:
+                    lines.append(
+                        f"<b>Rate:</b> {transaction_data['exchange_rate']:,.2f}"
+                    )
 
             # Description
             lines.append(f"<b>Description:</b> {transaction_data['description']}")
 
         # Date
-        if transaction_data['date']:
-            date_label = "<b>Fecha:</b>" if lang == 'es' else "<b>Date:</b>"
-            lines.append(f"{date_label} {transaction_data['date'].strftime('%d/%m/%Y')}")
+        if transaction_data["date"]:
+            date_label = "<b>Fecha:</b>" if lang == "es" else "<b>Date:</b>"
+            lines.append(
+                f"{date_label} {transaction_data['date'].strftime('%d/%m/%Y')}"
+            )
 
         # Confirmation question
-        confirmation = "¿Confirmas esta transacción?" if lang == 'es' else "Do you confirm this transaction?"
+        confirmation = (
+            "¿Confirmas esta transacción?"
+            if lang == "es"
+            else "Do you confirm this transaction?"
+        )
         lines.extend(["", confirmation])
+
+        return "\n".join(lines)
+
+    def _format_expense_confirmation_message(
+        self, transaction_data: dict, expense_confirmation: dict
+    ) -> str:
+        """Format confirmation message for expenses with category classification."""
+        from src.utils.language import Messages
+
+        lang = expense_confirmation["resolved_language"]
+        expense = expense_confirmation["expense"]
+        classification = expense_confirmation["classification"]
+
+        if lang == "es":
+            lines = ["🔔 <b>Confirmación de Gasto</b>", ""]
+
+            # Amount
+            lines.append(
+                f"<b>Monto:</b> {expense['amount']:,.0f} {expense['currency']}"
+            )
+
+            # Merchant (only if specified)
+            if expense["merchant"]:
+                lines.append(f"<b>Comercio:</b> {expense['merchant']}")
+
+            # Account if specified
+            if transaction_data.get("account_from"):
+                lines.append(f"<b>Desde:</b> {transaction_data['account_from']}")
+
+            # Description/Note
+            if expense["note"]:
+                lines.append(f"<b>Descripción:</b> {expense['note']}")
+
+            # Date
+            lines.append(f"<b>Fecha:</b> {expense['date']}")
+
+            # Classification
+            lines.append("")
+            lines.append(
+                f"<b>🏷️ Categoría:</b> {classification['category']} ({classification['confidence']:.0%} confianza)"
+            )
+
+            necessity_text = (
+                "✅ Necesario" if classification["is_necessary"] else "❌ No necesario"
+            )
+            lines.append(f"<b>Necesidad:</b> {necessity_text}")
+
+            # Confirmation question
+            lines.extend(["", "¿Confirmas este gasto?"])
+
+        else:  # English
+            lines = ["🔔 <b>Expense Confirmation</b>", ""]
+
+            # Amount
+            lines.append(
+                f"<b>Amount:</b> {expense['amount']:,.0f} {expense['currency']}"
+            )
+
+            # Merchant (only if specified)
+            if expense["merchant"]:
+                lines.append(f"<b>Merchant:</b> {expense['merchant']}")
+
+            # Account if specified
+            if transaction_data.get("account_from"):
+                lines.append(f"<b>From:</b> {transaction_data['account_from']}")
+
+            # Description/Note
+            if expense["note"]:
+                lines.append(f"<b>Description:</b> {expense['note']}")
+
+            # Date
+            lines.append(f"<b>Date:</b> {expense['date']}")
+
+            # Classification
+            lines.append("")
+            lines.append(
+                f"<b>🏷️ Category:</b> {classification['category']} ({classification['confidence']:.0%} confidence)"
+            )
+
+            necessity_text = (
+                "✅ Necessary" if classification["is_necessary"] else "❌ Not necessary"
+            )
+            lines.append(f"<b>Necessity:</b> {necessity_text}")
+
+            # Confirmation question
+            lines.extend(["", "Do you confirm this expense?"])
 
         return "\n".join(lines)
 
@@ -733,6 +1017,26 @@ class FinanceAgent:
         """Actually save the confirmed transaction."""
         try:
             from src.utils.language import Messages, detect_language
+
+            # For expenses with classification, update user memory
+            if (
+                transaction_data.get("category")
+                and transaction_data.get("transaction_type") == "expense"
+            ):
+                expense_confirmation = transaction_data.get("expense_confirmation")
+                if expense_confirmation:
+                    # Extract merchant from expense confirmation
+                    merchant = expense_confirmation["expense"]["merchant"]
+                    category = transaction_data["category"]
+                    is_necessary = transaction_data["is_necessary"]
+
+                    # Update user memory with this classification
+                    await self.financial_agent.update_user_memory(
+                        user_id=transaction_data["user_id"],
+                        merchant=merchant,
+                        category=category,
+                        is_necessary=is_necessary,
+                    )
 
             db_input = RegisterTransactionInput(**transaction_data)
             result = await self.db_tool.register_transaction(db_input)
@@ -743,57 +1047,76 @@ class FinanceAgent:
 
         except Exception as e:
             # Get language from stored attribute or detect from error context
-            lang = getattr(self, 'user_language', 'en')
+            lang = getattr(self, "user_language", "en")
             return Messages.get("error", "transaction_error", lang, error=str(e))
 
     def _format_success_message(self, transaction_data: dict) -> str:
         """Format success message after confirmation."""
         from src.utils.language import Messages
-        lang = getattr(self, 'user_language', 'en')
 
-        tx_type = transaction_data['transaction_type']
-        amount = transaction_data['amount']
-        currency = transaction_data['currency']
+        lang = getattr(self, "user_language", "en")
 
-        if lang == 'es':
+        tx_type = transaction_data["transaction_type"]
+        amount = transaction_data["amount"]
+        currency = transaction_data["currency"]
+
+        if lang == "es":
             if tx_type == "income":
                 msg = f"✅ Ingreso registrado: +{amount:,.0f} {currency}"
-                if transaction_data['account_to']:
+                if transaction_data["account_to"]:
                     msg += f"\n📍 Cuenta: {transaction_data['account_to']}"
             elif tx_type == "expense":
                 msg = f"✅ Gasto registrado: -{amount:,.0f} {currency}"
-                if transaction_data['account_from']:
+                if transaction_data["account_from"]:
                     msg += f"\n📍 Desde: {transaction_data['account_from']}"
+                # Add classification info if available
+                if transaction_data.get("category"):
+                    msg += f"\n🏷️ Categoría: {transaction_data['category']}"
+                    necessity = (
+                        "Necesario"
+                        if transaction_data.get("is_necessary")
+                        else "No necesario"
+                    )
+                    msg += f"\n{'✅' if transaction_data.get('is_necessary') else '❌'} {necessity}"
             elif tx_type == "transfer":
                 msg = f"✅ Transferencia registrada: {amount:,.0f} {currency}"
-                if transaction_data['account_from'] and transaction_data['account_to']:
+                if transaction_data["account_from"] and transaction_data["account_to"]:
                     msg += f"\n📍 {transaction_data['account_from']} → {transaction_data['account_to']}"
             elif tx_type == "conversion":
                 msg = f"✅ Conversión registrada: {amount:,.0f} {currency}"
-                if transaction_data['currency_to'] and transaction_data['amount_to']:
+                if transaction_data["currency_to"] and transaction_data["amount_to"]:
                     msg += f"\n💱 → {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}"
 
-            if transaction_data['date']:
+            if transaction_data["date"]:
                 msg += f"\n📅 Fecha: {transaction_data['date'].strftime('%d/%m/%Y')}"
         else:
             if tx_type == "income":
                 msg = f"✅ Income registered: +{amount:,.0f} {currency}"
-                if transaction_data['account_to']:
+                if transaction_data["account_to"]:
                     msg += f"\n📍 Account: {transaction_data['account_to']}"
             elif tx_type == "expense":
                 msg = f"✅ Expense registered: -{amount:,.0f} {currency}"
-                if transaction_data['account_from']:
+                if transaction_data["account_from"]:
                     msg += f"\n📍 From: {transaction_data['account_from']}"
+                # Add classification info if available
+                if transaction_data.get("category"):
+                    msg += f"\n🏷️ Category: {transaction_data['category']}"
+                    necessity = (
+                        "Necessary"
+                        if transaction_data.get("is_necessary")
+                        else "Not necessary"
+                    )
+                    msg += f"\n{'✅' if transaction_data.get('is_necessary') else '❌'} {necessity}"
             elif tx_type == "transfer":
                 msg = f"✅ Transfer registered: {amount:,.0f} {currency}"
-                if transaction_data['account_from'] and transaction_data['account_to']:
+                if transaction_data["account_from"] and transaction_data["account_to"]:
                     msg += f"\n📍 {transaction_data['account_from']} → {transaction_data['account_to']}"
             elif tx_type == "conversion":
                 msg = f"✅ Conversion registered: {amount:,.0f} {currency}"
-                if transaction_data['currency_to'] and transaction_data['amount_to']:
+                if transaction_data["currency_to"] and transaction_data["amount_to"]:
                     msg += f"\n💱 → {transaction_data['amount_to']:,.0f} {transaction_data['currency_to']}"
 
-            if transaction_data['date']:
+            if transaction_data["date"]:
                 msg += f"\n📅 Date: {transaction_data['date'].strftime('%d/%m/%Y')}"
 
         return msg
@@ -805,7 +1128,9 @@ class FinanceAgent:
                 # Apply account name normalization for queries too
                 account_name = intent.account_name
                 if account_name:
-                    account_name = await self._find_similar_account(account_name, user_id)
+                    account_name = await self._find_similar_account(
+                        account_name, user_id
+                    )
 
                 balances = await self.db_tool.query_balances(
                     QueryBalancesInput(account_name=account_name), user_id
@@ -813,36 +1138,49 @@ class FinanceAgent:
                 return self._format_balances(balances)
 
             elif intent.intent == QueryIntent.ALL_ACCOUNTS:
-                balances = await self.db_tool.query_balances(QueryBalancesInput(), user_id)
+                balances = await self.db_tool.query_balances(
+                    QueryBalancesInput(), user_id
+                )
                 return self._format_balances(balances)
 
             elif intent.intent in [QueryIntent.EXPENSES, QueryIntent.INCOME]:
                 if not intent.start_date or not intent.end_date:
                     # If no date range, assume today
                     from datetime import datetime, timedelta
-                    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+                    today = datetime.now().replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
                     intent.start_date = today
-                    intent.end_date = today + timedelta(days=1) - timedelta(microseconds=1)
+                    intent.end_date = (
+                        today + timedelta(days=1) - timedelta(microseconds=1)
+                    )
 
                 # Apply account name normalization for queries too
                 account_name = intent.account_name
                 if account_name:
-                    account_name = await self._find_similar_account(account_name, user_id)
+                    account_name = await self._find_similar_account(
+                        account_name, user_id
+                    )
 
-                transaction_type = "expense" if intent.intent == QueryIntent.EXPENSES else "income"
+                transaction_type = (
+                    "expense" if intent.intent == QueryIntent.EXPENSES else "income"
+                )
                 transactions = await self.db_tool.query_transactions(
                     QueryTransactionsInput(
                         start_date=intent.start_date,
                         end_date=intent.end_date,
                         account_name=account_name,
-                        transaction_type=transaction_type
-                    ), user_id
+                        transaction_type=transaction_type,
+                    ),
+                    user_id,
                 )
 
                 total = sum(t.amount for t in transactions)
 
                 # Format response with date context
                 from src.utils.date_utils import format_date_range_spanish
+
                 date_str = format_date_range_spanish(intent.start_date, intent.end_date)
 
                 if intent.intent == QueryIntent.EXPENSES:
@@ -857,7 +1195,11 @@ class FinanceAgent:
                         if len(transactions) <= 5:
                             response += "\n📋 <b>Detalle:</b>\n"
                             for tx in transactions:
-                                account_info = f" desde {tx.account_from}" if tx.account_from else ""
+                                account_info = (
+                                    f" desde {tx.account_from}"
+                                    if tx.account_from
+                                    else ""
+                                )
                                 response += f"• {tx.amount:,.2f} {tx.currency}{account_info} - {tx.description or 'Sin descripción'}\n"
 
                         return response
@@ -873,7 +1215,9 @@ class FinanceAgent:
                         if len(transactions) <= 5:
                             response += "\n📋 <b>Detalle:</b>\n"
                             for tx in transactions:
-                                account_info = f" hacia {tx.account_to}" if tx.account_to else ""
+                                account_info = (
+                                    f" hacia {tx.account_to}" if tx.account_to else ""
+                                )
                                 response += f"• {tx.amount:,.2f} {tx.currency}{account_info} - {tx.description or 'Sin descripción'}\n"
 
                         return response
@@ -882,9 +1226,14 @@ class FinanceAgent:
                 if not intent.start_date or not intent.end_date:
                     # If no date range, assume last 30 days
                     from datetime import datetime, timedelta
-                    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+                    today = datetime.now().replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
                     intent.start_date = today - timedelta(days=29)
-                    intent.end_date = today + timedelta(days=1) - timedelta(microseconds=1)
+                    intent.end_date = (
+                        today + timedelta(days=1) - timedelta(microseconds=1)
+                    )
 
                 largest = await self.db_tool.get_largest_transaction(
                     user_id, intent.start_date, intent.end_date, TransactionType.EXPENSE
@@ -892,12 +1241,19 @@ class FinanceAgent:
 
                 if largest:
                     from src.utils.date_utils import format_date_range_spanish
-                    date_str = format_date_range_spanish(intent.start_date, intent.end_date)
-                    account_info = f" desde {largest.account_from}" if largest.account_from else ""
-                    date_info = largest.date.strftime('%d/%m/%Y')
+
+                    date_str = format_date_range_spanish(
+                        intent.start_date, intent.end_date
+                    )
+                    account_info = (
+                        f" desde {largest.account_from}" if largest.account_from else ""
+                    )
+                    date_info = largest.date.strftime("%d/%m/%Y")
 
                     response = f"💸 <b>Mayor gasto {date_str}:</b>\n"
-                    response += f"<b>Monto:</b> {largest.amount:,.2f} {largest.currency}\n"
+                    response += (
+                        f"<b>Monto:</b> {largest.amount:,.2f} {largest.currency}\n"
+                    )
                     response += f"<b>Fecha:</b> {date_info}\n"
                     if largest.account_from:
                         response += f"<b>Cuenta:</b> {largest.account_from}\n"
@@ -907,43 +1263,55 @@ class FinanceAgent:
                     return response
                 else:
                     from src.utils.date_utils import format_date_range_spanish
-                    date_str = format_date_range_spanish(intent.start_date, intent.end_date)
+
+                    date_str = format_date_range_spanish(
+                        intent.start_date, intent.end_date
+                    )
                     return f"❌ No se encontraron gastos {date_str}"
 
             elif intent.intent == QueryIntent.ALL_TRANSACTIONS:
                 if not intent.start_date or not intent.end_date:
                     # If no date range, assume last 30 days
                     from datetime import datetime, timedelta
-                    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+                    today = datetime.now().replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
                     intent.start_date = today - timedelta(days=29)
-                    intent.end_date = today + timedelta(days=1) - timedelta(microseconds=1)
+                    intent.end_date = (
+                        today + timedelta(days=1) - timedelta(microseconds=1)
+                    )
 
                 # Apply account name normalization for queries too
                 account_name = intent.account_name
                 if account_name:
-                    account_name = await self._find_similar_account(account_name, user_id)
+                    account_name = await self._find_similar_account(
+                        account_name, user_id
+                    )
 
                 transactions = await self.db_tool.query_transactions(
                     QueryTransactionsInput(
                         start_date=intent.start_date,
                         end_date=intent.end_date,
                         account_name=account_name,
-                        transaction_type=None  # Get all transaction types
-                    ), user_id
+                        transaction_type=None,  # Get all transaction types
+                    ),
+                    user_id,
                 )
 
                 # Format response with date context
                 from src.utils.date_utils import format_date_range_spanish
+
                 date_str = format_date_range_spanish(intent.start_date, intent.end_date)
 
                 if not transactions:
                     return f"💰 No tuviste transacciones {date_str}"
 
                 # Group transactions by type for summary
-                expenses = [t for t in transactions if t.type == 'expense']
-                income = [t for t in transactions if t.type == 'income']
-                transfers = [t for t in transactions if t.type == 'transfer']
-                conversions = [t for t in transactions if t.type == 'conversion']
+                expenses = [t for t in transactions if t.type == "expense"]
+                income = [t for t in transactions if t.type == "income"]
+                transfers = [t for t in transactions if t.type == "transfer"]
+                conversions = [t for t in transactions if t.type == "conversion"]
 
                 # Calculate totals by currency
                 def group_by_currency(transactions_list):
@@ -959,16 +1327,26 @@ class FinanceAgent:
                 income_totals = group_by_currency(income)
 
                 # Build response
-                lang = getattr(self, 'user_language', 'es')
-                if lang == 'es':
+                lang = getattr(self, "user_language", "es")
+                if lang == "es":
                     response = f"💼 <b>Transacciones {date_str}:</b>\n"
                     response += f"<b>Total:</b> {len(transactions)} transacciones\n\n"
 
                     if expenses:
-                        expense_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in expense_totals.items()])
+                        expense_summary = ", ".join(
+                            [
+                                f"{amount:,.0f} {currency}"
+                                for currency, amount in expense_totals.items()
+                            ]
+                        )
                         response += f"💸 <b>Gastos:</b> {len(expenses)} transacciones - {expense_summary}\n"
                     if income:
-                        income_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in income_totals.items()])
+                        income_summary = ", ".join(
+                            [
+                                f"{amount:,.0f} {currency}"
+                                for currency, amount in income_totals.items()
+                            ]
+                        )
                         response += f"💰 <b>Ingresos:</b> {len(income)} transacciones - {income_summary}\n"
                     if transfers:
                         response += f"🔄 <b>Transferencias:</b> {len(transfers)} transacciones\n"
@@ -977,8 +1355,13 @@ class FinanceAgent:
 
                     response += "\n📋 <b>Detalle:</b>\n"
                     for tx in transactions[:10]:  # Show first 10 transactions
-                        tx_type_icon = {'expense': '💸', 'income': '💰', 'transfer': '🔄', 'conversion': '💱'}.get(tx.type, '💼')
-                        date_info = tx.date.strftime('%d/%m')
+                        tx_type_icon = {
+                            "expense": "💸",
+                            "income": "💰",
+                            "transfer": "🔄",
+                            "conversion": "💱",
+                        }.get(tx.type, "💼")
+                        date_info = tx.date.strftime("%d/%m")
                         account_info = ""
                         if tx.account_from and tx.account_to:
                             account_info = f" ({tx.account_from} → {tx.account_to})"
@@ -990,26 +1373,47 @@ class FinanceAgent:
                         response += f"• {tx_type_icon} {date_info}: {tx.amount:,.0f} {tx.currency}{account_info} - {tx.description or 'Sin descripción'}\n"
 
                     if len(transactions) > 10:
-                        response += f"\n... y {len(transactions) - 10} transacciones más"
+                        response += (
+                            f"\n... y {len(transactions) - 10} transacciones más"
+                        )
                 else:  # English
                     response = f"💼 <b>Transactions {date_str}:</b>\n"
                     response += f"<b>Total:</b> {len(transactions)} transactions\n\n"
 
                     if expenses:
-                        expense_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in expense_totals.items()])
+                        expense_summary = ", ".join(
+                            [
+                                f"{amount:,.0f} {currency}"
+                                for currency, amount in expense_totals.items()
+                            ]
+                        )
                         response += f"💸 <b>Expenses:</b> {len(expenses)} transactions - {expense_summary}\n"
                     if income:
-                        income_summary = ", ".join([f"{amount:,.0f} {currency}" for currency, amount in income_totals.items()])
+                        income_summary = ", ".join(
+                            [
+                                f"{amount:,.0f} {currency}"
+                                for currency, amount in income_totals.items()
+                            ]
+                        )
                         response += f"💰 <b>Income:</b> {len(income)} transactions - {income_summary}\n"
                     if transfers:
-                        response += f"🔄 <b>Transfers:</b> {len(transfers)} transactions\n"
+                        response += (
+                            f"🔄 <b>Transfers:</b> {len(transfers)} transactions\n"
+                        )
                     if conversions:
-                        response += f"💱 <b>Conversions:</b> {len(conversions)} transactions\n"
+                        response += (
+                            f"💱 <b>Conversions:</b> {len(conversions)} transactions\n"
+                        )
 
                     response += "\n📋 <b>Details:</b>\n"
                     for tx in transactions[:10]:  # Show first 10 transactions
-                        tx_type_icon = {'expense': '💸', 'income': '💰', 'transfer': '🔄', 'conversion': '💱'}.get(tx.type, '💼')
-                        date_info = tx.date.strftime('%d/%m')
+                        tx_type_icon = {
+                            "expense": "💸",
+                            "income": "💰",
+                            "transfer": "🔄",
+                            "conversion": "💱",
+                        }.get(tx.type, "💼")
+                        date_info = tx.date.strftime("%d/%m")
                         account_info = ""
                         if tx.account_from and tx.account_to:
                             account_info = f" ({tx.account_from} → {tx.account_to})"
@@ -1021,7 +1425,9 @@ class FinanceAgent:
                         response += f"• {tx_type_icon} {date_info}: {tx.amount:,.0f} {tx.currency}{account_info} - {tx.description or 'No description'}\n"
 
                     if len(transactions) > 10:
-                        response += f"\n... and {len(transactions) - 10} more transactions"
+                        response += (
+                            f"\n... and {len(transactions) - 10} more transactions"
+                        )
 
                 return response
 
@@ -1047,22 +1453,30 @@ class FinanceAgent:
                 if not intent.start_date or not intent.end_date:
                     # If no date range, assume last 30 days
                     from datetime import datetime, timedelta
-                    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+                    today = datetime.now().replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
                     intent.start_date = today - timedelta(days=29)
-                    intent.end_date = today + timedelta(days=1) - timedelta(microseconds=1)
+                    intent.end_date = (
+                        today + timedelta(days=1) - timedelta(microseconds=1)
+                    )
 
                 # Apply account name normalization for PDF queries too
                 account_name = intent.account_name
                 if account_name:
-                    account_name = await self._find_similar_account(account_name, user_id)
+                    account_name = await self._find_similar_account(
+                        account_name, user_id
+                    )
 
                 pdf_path = await self.db_tool.generate_transactions_pdf(
                     QueryTransactionsInput(
                         start_date=intent.start_date,
                         end_date=intent.end_date,
                         account_name=account_name,
-                        transaction_type=None  # Get all transaction types for PDF
-                    ), user_id
+                        transaction_type=None,  # Get all transaction types for PDF
+                    ),
+                    user_id,
                 )
                 return f"PDF_FILE:{pdf_path}"
 
@@ -1097,7 +1511,9 @@ class FinanceAgent:
             for account_name, account_balances in tracked_accounts.items():
                 if len(account_balances) == 1:
                     balance = account_balances[0]
-                    lines.append(f"• {account_name} – {balance.currency} {balance.balance:,.2f}")
+                    lines.append(
+                        f"• {account_name} – {balance.currency} {balance.balance:,.2f}"
+                    )
                 else:
                     currencies = []
                     for balance in account_balances:
@@ -1128,7 +1544,9 @@ class FinanceAgent:
         if report.largest_transaction:
             t = report.largest_transaction
             account_info = f" from {t.account_from}" if t.account_from else ""
-            lines.append(f"🏆 Largest Transaction: {t.amount:,.2f} {t.currency}{account_info}")
+            lines.append(
+                f"🏆 Largest Transaction: {t.amount:,.2f} {t.currency}{account_info}"
+            )
             lines.append("")
 
         lines.append("🏦 <b>Current Balances:</b>")

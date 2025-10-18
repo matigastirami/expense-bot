@@ -22,11 +22,16 @@ class ParsedTransactionIntent(BaseModel):
 
     # For conversions
     amount_to: Optional[Decimal] = Field(None, description="Converted amount")
-    currency_to: Optional[str] = Field(None, description="Target currency for conversion")
+    currency_to: Optional[str] = Field(
+        None, description="Target currency for conversion"
+    )
     exchange_rate: Optional[Decimal] = Field(None, description="Exchange rate used")
 
     # Optional fields
     date: Optional[datetime] = Field(None, description="Transaction date")
+    merchant: Optional[str] = Field(
+        None, description="Merchant/store name for expenses"
+    )
     description: Optional[str] = Field(None, description="Transaction description")
 
     class Config:
@@ -53,9 +58,15 @@ class ParsedQueryIntent(BaseModel):
     intent: QueryIntent = Field(..., description="Type of query")
     account_name: Optional[str] = Field(None, description="Specific account to query")
     currency: Optional[str] = Field(None, description="Specific currency to filter by")
-    date_expression: Optional[str] = Field(None, description="Original date expression for parsing")
-    start_date: Optional[datetime] = Field(None, description="Start date for date range queries")
-    end_date: Optional[datetime] = Field(None, description="End date for date range queries")
+    date_expression: Optional[str] = Field(
+        None, description="Original date expression for parsing"
+    )
+    start_date: Optional[datetime] = Field(
+        None, description="Start date for date range queries"
+    )
+    end_date: Optional[datetime] = Field(
+        None, description="End date for date range queries"
+    )
     month: Optional[int] = Field(None, description="Month for monthly queries (1-12)")
     year: Optional[int] = Field(None, description="Year for monthly queries")
 

@@ -15,7 +15,13 @@ from typing import Dict, Any, Optional
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, Voice
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    Voice,
+)
 from aiogram.utils.markdown import hbold, hcode
 
 from src.agent.financial_agent import FinancialAnalysisAgent
@@ -34,6 +40,7 @@ financial_agent = FinancialAnalysisAgent()
 # Store pending confirmations (in production, use Redis or database)
 pending_confirmations: Dict[str, Dict[str, Any]] = {}
 
+
 def cleanup_expired_confirmations():
     """Clean up confirmations older than 10 minutes to prevent memory leaks."""
     from datetime import timedelta
@@ -42,8 +49,8 @@ def cleanup_expired_confirmations():
     expired_ids = []
 
     for conf_id, data in pending_confirmations.items():
-        if 'created_at' in data:
-            age = now - data['created_at']
+        if "created_at" in data:
+            age = now - data["created_at"]
             if age > timedelta(minutes=10):  # 10 minute expiration
                 expired_ids.append(conf_id)
 
@@ -53,6 +60,7 @@ def cleanup_expired_confirmations():
 
     if expired_ids:
         logger.info(f"Cleaned up {len(expired_ids)} expired confirmations")
+
 
 # Initialize audio transcription service
 try:
@@ -86,7 +94,9 @@ async def cmd_analyze(message: Message, state: FSMContext):
 
         # Send recommendations if any
         if analysis["recommendations"]:
-            rec_text = _format_recommendations(analysis["recommendations"], analysis["resolved_language"])
+            rec_text = _format_recommendations(
+                analysis["recommendations"], analysis["resolved_language"]
+            )
             await message.answer(rec_text, parse_mode="HTML")
 
     except Exception as e:
@@ -109,8 +119,8 @@ async def handle_voice_expense(message: Message, state: FSMContext):
                     "Para habilitar esta función, necesitas configurar una clave API de OpenAI.\n"
                     "Por ahora, puedes escribir tu gasto de estas formas:\n\n"
                     "• /expense 50 USD Starbucks café\n"
-                    "• \"Gasté 50 dólares en Starbucks para café\"\n"
-                    "• \"50 USD Starbucks - café de la mañana\""
+                    '• "Gasté 50 dólares en Starbucks para café"\n'
+                    '• "50 USD Starbucks - café de la mañana"'
                 )
             else:
                 await message.answer(
@@ -118,8 +128,8 @@ async def handle_voice_expense(message: Message, state: FSMContext):
                     "To enable this feature, you need to configure an OpenAI API key.\n"
                     "For now, you can enter expenses by typing:\n\n"
                     "• /expense 50 USD Starbucks coffee\n"
-                    "• \"Spent 50 dollars at Starbucks for coffee\"\n"
-                    "• \"50 USD Starbucks - morning coffee\""
+                    '• "Spent 50 dollars at Starbucks for coffee"\n'
+                    '• "50 USD Starbucks - morning coffee"'
                 )
             return
 
@@ -134,11 +144,11 @@ async def handle_voice_expense(message: Message, state: FSMContext):
         language_hint = None
         user_language = "en"  # Default
         if message.from_user.language_code:
-            if message.from_user.language_code.startswith('es'):
-                language_hint = 'es'
+            if message.from_user.language_code.startswith("es"):
+                language_hint = "es"
                 user_language = "es"
-            elif message.from_user.language_code.startswith('en'):
-                language_hint = 'en'
+            elif message.from_user.language_code.startswith("en"):
+                language_hint = "en"
                 user_language = "en"
 
         # Show processing indicator in user's language
@@ -150,9 +160,7 @@ async def handle_voice_expense(message: Message, state: FSMContext):
         try:
             # Transcribe the voice message
             transcription = await audio_service.download_and_transcribe_telegram_voice(
-                bot=message.bot,
-                voice=message.voice,
-                language=language_hint
+                bot=message.bot, voice=message.voice, language=language_hint
             )
 
             if not transcription:
@@ -175,11 +183,19 @@ async def handle_voice_expense(message: Message, state: FSMContext):
                 return
 
             # Edit the processing message to show transcription
-            transcription_preview = transcription[:100] + "..." if len(transcription) > 100 else transcription
+            transcription_preview = (
+                transcription[:100] + "..."
+                if len(transcription) > 100
+                else transcription
+            )
             if user_language == "es":
-                await processing_msg.edit_text(f"🎤➡️📝 Transcrito: \"{transcription_preview}\"")
+                await processing_msg.edit_text(
+                    f'🎤➡️📝 Transcrito: "{transcription_preview}"'
+                )
             else:
-                await processing_msg.edit_text(f"🎤➡️📝 Transcribed: \"{transcription_preview}\"")
+                await processing_msg.edit_text(
+                    f'🎤➡️📝 Transcribed: "{transcription_preview}"'
+                )
 
             # Parse the transcription for expense information
             expense_data = await _parse_voice_expense(transcription, user.id)
@@ -188,60 +204,80 @@ async def handle_voice_expense(message: Message, state: FSMContext):
                 if user_language == "es":
                     await message.answer(
                         f"🤔 No pude encontrar información de gasto en:\n\n"
-                        f"\"{transcription}\"\n\n"
+                        f'"{transcription}"\n\n'
                         "Intenta incluir:\n"
                         "• Cantidad (ej: 50 pesos, 25 dólares)\n"
                         "• Lugar o descripción (ej: supermercado, café)\n\n"
-                        "Ejemplo: \"Gasté 50 dólares en Starbucks para café\""
+                        'Ejemplo: "Gasté 50 dólares en Starbucks para café"'
                     )
                 else:
                     await message.answer(
                         f"🤔 I couldn't find expense information in:\n\n"
-                        f"\"{transcription}\"\n\n"
+                        f'"{transcription}"\n\n'
                         "Try including:\n"
                         "• Amount (e.g., 50 dollars, 25 euros)\n"
                         "• Place or description (e.g., grocery store, coffee)\n\n"
-                        "Example: \"I spent 50 dollars at Starbucks for coffee\""
+                        'Example: "I spent 50 dollars at Starbucks for coffee"'
                     )
                 return
 
             # Process the expense using the financial agent
-            confirmation = await financial_agent.process_expense_confirmation(**expense_data)
+            # Detect language from the actual transcription text (not user settings)
+            # This handles cases where Whisper transcribes Spanish -> English
+            from src.utils.language import detect_language
+            detected_lang = detect_language(transcription)
+            expense_data["language"] = detected_lang
+            confirmation = await financial_agent.process_expense_confirmation(
+                **expense_data
+            )
 
             # Store confirmation for callback with more unique ID
             import time
+
             confirmation_id = f"{user.id}_{int(time.time() * 1000)}"  # Use milliseconds for better uniqueness
             pending_confirmations[confirmation_id] = {
                 "confirmation": confirmation,
                 "user_id": user.id,
                 "original_transcription": transcription,
-                "created_at": datetime.now()
+                "created_at": datetime.now(),
             }
             logger.info(f"Stored confirmation with ID: {confirmation_id}")
 
             # Send confirmation message with buttons
-            keyboard = _build_expense_confirmation_keyboard(confirmation_id, confirmation)
+            keyboard = _build_expense_confirmation_keyboard(
+                confirmation_id, confirmation
+            )
             response = _format_expense_confirmation(confirmation)
 
             # Add transcription info to the response
             language = confirmation["resolved_language"]
             if language == "es":
-                transcription_info = f"🎤 Mensaje de voz: \"{transcription}\"\n\n"
+                transcription_info = f'🎤 Mensaje de voz: "{transcription}"\n\n'
             else:
-                transcription_info = f"🎤 Voice message: \"{transcription}\"\n\n"
+                transcription_info = f'🎤 Voice message: "{transcription}"\n\n'
 
             full_response = transcription_info + response
 
-            await message.answer(full_response, reply_markup=keyboard, parse_mode="HTML")
+            await message.answer(
+                full_response, reply_markup=keyboard, parse_mode="HTML"
+            )
 
         except Exception as e:
             logger.error(f"Error processing voice message: {e}")
-            error_msg = "❌ Error al procesar mensaje de voz" if user_language == "es" else "❌ Error processing voice message"
+            error_msg = (
+                "❌ Error al procesar mensaje de voz"
+                if user_language == "es"
+                else "❌ Error processing voice message"
+            )
             await processing_msg.edit_text(f"{error_msg}: {str(e)}")
 
     except Exception as e:
         logger.error(f"Error in voice handler: {e}")
-        error_msg = "❌ Error procesando audio" if user_language == "es" else "❌ Error processing audio"
+        error_msg = (
+            "❌ Error procesando audio"
+            if user_language == "es"
+            else "❌ Error processing audio"
+        )
         await message.answer(error_msg)
 
 
@@ -259,18 +295,29 @@ async def handle_text_expense(message: Message, state: FSMContext):
         # Only process messages that explicitly mention specific analysis keywords
         # This prevents interference with the original agent's Spanish processing
         analysis_indicators = [
-            'analyze', 'análisis', 'analizar', 'categorize', 'categorizar',
-            'budget', 'presupuesto', 'classify', 'clasificar'
+            "analyze",
+            "análisis",
+            "analizar",
+            "categorize",
+            "categorizar",
+            "budget",
+            "presupuesto",
+            "classify",
+            "clasificar",
         ]
 
         # Check for explicit Financial Analysis Agent keywords
-        should_use_financial_agent = any(indicator in text for indicator in analysis_indicators)
+        should_use_financial_agent = any(
+            indicator in text for indicator in analysis_indicators
+        )
 
         # If this doesn't contain analysis keywords, let the original agent handle it
         if not should_use_financial_agent:
             # Get user from database
             async with async_session_maker() as session:
-                user = await UserCRUD.get_by_telegram_id(session, str(message.from_user.id))
+                user = await UserCRUD.get_by_telegram_id(
+                    session, str(message.from_user.id)
+                )
                 if not user:
                     await message.answer("❌ User not found. Please use /start first.")
                     return
@@ -288,7 +335,9 @@ async def handle_text_expense(message: Message, state: FSMContext):
             logger.info(f"Parsed expense data: {expense_data}")
 
             if not expense_data:
-                logger.info("No expense data extracted, falling back to original bot processing")
+                logger.info(
+                    "No expense data extracted, falling back to original bot processing"
+                )
                 # Delete processing message and fall back to original bot processing
                 await processing_msg.delete()
                 return
@@ -296,40 +345,53 @@ async def handle_text_expense(message: Message, state: FSMContext):
             # Process the expense using the financial agent
             logger.info(f"Processing expense data: {expense_data}")
             try:
-                confirmation = await financial_agent.process_expense_confirmation(**expense_data)
-                logger.info(f"Expense confirmation received: {confirmation.get('type', 'unknown')}")
+                # Add language to expense_data
+                expense_data["language"] = language
+                confirmation = await financial_agent.process_expense_confirmation(
+                    **expense_data
+                )
+                logger.info(
+                    f"Expense confirmation received: {confirmation.get('type', 'unknown')}"
+                )
             except Exception as e:
                 logger.error(f"Error in process_expense_confirmation: {e}")
-                await processing_msg.edit_text(f"❌ Error al procesar el gasto: {str(e)}")
+                await processing_msg.edit_text(
+                    f"❌ Error al procesar el gasto: {str(e)}"
+                )
                 return
 
             # Store confirmation for callback with more unique ID
             import time
+
             confirmation_id = f"{user.id}_{int(time.time() * 1000)}"
             pending_confirmations[confirmation_id] = {
                 "confirmation": confirmation,
                 "user_id": user.id,
                 "created_at": datetime.now(),
-                "original_text": message.text
+                "original_text": message.text,
             }
             logger.info(f"Stored text expense confirmation with ID: {confirmation_id}")
 
             # Send confirmation message with enhanced buttons
-            keyboard = _build_expense_confirmation_keyboard(confirmation_id, confirmation)
+            keyboard = _build_expense_confirmation_keyboard(
+                confirmation_id, confirmation
+            )
             response = _format_expense_confirmation(confirmation)
 
             # Add text source info to the response
             language = confirmation["resolved_language"]
             if language == "es":
-                text_info = f"📝 Mensaje: \"{message.text}\"\n\n"
+                text_info = f'📝 Mensaje: "{message.text}"\n\n'
             else:
-                text_info = f"📝 Text message: \"{message.text}\"\n\n"
+                text_info = f'📝 Text message: "{message.text}"\n\n'
 
             full_response = text_info + response
 
             # Delete the processing message and send the confirmation
             await processing_msg.delete()
-            await message.answer(full_response, reply_markup=keyboard, parse_mode="HTML")
+            await message.answer(
+                full_response, reply_markup=keyboard, parse_mode="HTML"
+            )
             return
 
         # If not an expense, let the original bot handle it by not handling the message
@@ -338,7 +400,7 @@ async def handle_text_expense(message: Message, state: FSMContext):
         logger.error(f"Error in text expense handler: {e}")
         # Show error to user instead of silently failing
         try:
-            if 'processing_msg' in locals():
+            if "processing_msg" in locals():
                 await processing_msg.edit_text(f"❌ Error procesando gasto: {str(e)}")
             else:
                 await message.answer(f"❌ Error procesando gasto: {str(e)}")
@@ -366,15 +428,22 @@ async def cmd_expense(message: Message, state: FSMContext):
         if len(args) < 3:
             language = detect_language(message.text or "")
             if language == "es":
-                await message.answer("Uso: /expense <cantidad> <moneda> <comercio> [descripción]\nEjemplo: /expense 50 USD Starbucks café de la mañana")
+                await message.answer(
+                    "Uso: /expense <cantidad> <moneda> <comercio> [descripción]\nEjemplo: /expense 50 USD Starbucks café de la mañana"
+                )
             else:
-                await message.answer("Usage: /expense <amount> <currency> <merchant> [description]\nExample: /expense 50 USD Starbucks morning coffee")
+                await message.answer(
+                    "Usage: /expense <amount> <currency> <merchant> [description]\nExample: /expense 50 USD Starbucks morning coffee"
+                )
             return
 
         amount = float(args[0])
         currency = args[1].upper()
         merchant = args[2]
         note = " ".join(args[3:]) if len(args) > 3 else ""
+
+        # Detect language from the command text
+        language = detect_language(message.text or "")
 
         # Process expense confirmation
         confirmation = await financial_agent.process_expense_confirmation(
@@ -383,16 +452,18 @@ async def cmd_expense(message: Message, state: FSMContext):
             date=None,  # Use today
             merchant=merchant,
             note=note,
-            user_id=user.id
+            user_id=user.id,
+            language=language,
         )
 
         # Store confirmation for callback with more unique ID
         import time
+
         confirmation_id = f"{user.id}_{int(time.time() * 1000)}"  # Use milliseconds for better uniqueness
         pending_confirmations[confirmation_id] = {
             "confirmation": confirmation,
             "user_id": user.id,
-            "created_at": datetime.now()
+            "created_at": datetime.now(),
         }
         logger.info(f"Stored confirmation with ID: {confirmation_id}")
 
@@ -429,9 +500,13 @@ async def cmd_budget(message: Message, state: FSMContext):
         if not args:
             language = detect_language(message.text or "")
             if language == "es":
-                await message.answer("Uso: /budget <porcentajes>\nEjemplo: /budget 50% fijo, 30% necesario, 20% discrecional")
+                await message.answer(
+                    "Uso: /budget <porcentajes>\nEjemplo: /budget 50% fijo, 30% necesario, 20% discrecional"
+                )
             else:
-                await message.answer("Usage: /budget <percentages>\nExample: /budget 50% fixed, 30% necessary, 20% discretionary")
+                await message.answer(
+                    "Usage: /budget <percentages>\nExample: /budget 50% fixed, 30% necessary, 20% discretionary"
+                )
             return
 
         budget_text = " ".join(args)
@@ -456,9 +531,13 @@ async def handle_expense_callback(callback: CallbackQuery):
     try:
         data_parts = callback.data.split("_", 2)  # Split only on first 2 underscores
         action = data_parts[1]  # confirm, category, necessity
-        confirmation_id = data_parts[2]  # This will be the full confirmation_id including underscores
+        confirmation_id = data_parts[
+            2
+        ]  # This will be the full confirmation_id including underscores
 
-        logger.info(f"Callback received: action={action}, confirmation_id={confirmation_id}")
+        logger.info(
+            f"Callback received: action={action}, confirmation_id={confirmation_id}"
+        )
 
         # Clean up any expired confirmations
         cleanup_expired_confirmations()
@@ -466,10 +545,21 @@ async def handle_expense_callback(callback: CallbackQuery):
         logger.info(f"Available confirmations: {list(pending_confirmations.keys())}")
 
         if confirmation_id not in pending_confirmations:
-            logger.warning(f"Confirmation ID {confirmation_id} not found in pending confirmations")
+            logger.warning(
+                f"Confirmation ID {confirmation_id} not found in pending confirmations"
+            )
             # Try to detect language for error message
-            language = "es" if callback.from_user.language_code and callback.from_user.language_code.startswith('es') else "en"
-            error_msg = "❌ Confirmación expiró. Intenta de nuevo." if language == "es" else "❌ Confirmation expired. Please try again."
+            language = (
+                "es"
+                if callback.from_user.language_code
+                and callback.from_user.language_code.startswith("es")
+                else "en"
+            )
+            error_msg = (
+                "❌ Confirmación expiró. Intenta de nuevo."
+                if language == "es"
+                else "❌ Confirmation expired. Please try again."
+            )
             await callback.answer(error_msg)
             return
 
@@ -513,9 +603,13 @@ async def handle_expense_callback(callback: CallbackQuery):
 
             # Update UI text
             new_text = _format_expense_confirmation(confirmation)
-            keyboard = _build_expense_confirmation_keyboard(confirmation_id, confirmation)
+            keyboard = _build_expense_confirmation_keyboard(
+                confirmation_id, confirmation
+            )
 
-            await callback.message.edit_text(new_text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.message.edit_text(
+                new_text, reply_markup=keyboard, parse_mode="HTML"
+            )
             await callback.answer("✅ Necessity updated!")
 
         elif action.startswith("setcat"):
@@ -525,15 +619,23 @@ async def handle_expense_callback(callback: CallbackQuery):
 
             # Update UI
             new_text = _format_expense_confirmation(confirmation)
-            keyboard = _build_expense_confirmation_keyboard(confirmation_id, confirmation)
+            keyboard = _build_expense_confirmation_keyboard(
+                confirmation_id, confirmation
+            )
 
-            await callback.message.edit_text(new_text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.message.edit_text(
+                new_text, reply_markup=keyboard, parse_mode="HTML"
+            )
             await callback.answer(f"✅ Category set to {category}")
 
         elif action == "cancel":
             # Cancel the transaction
             language = confirmation["resolved_language"]
-            cancel_msg = "❌ Transaction cancelled." if language == "en" else "❌ Transacción cancelada."
+            cancel_msg = (
+                "❌ Transaction cancelled."
+                if language == "en"
+                else "❌ Transacción cancelada."
+            )
 
             await callback.message.edit_text(cancel_msg)
             await callback.answer("Transaction cancelled")
@@ -546,7 +648,9 @@ async def handle_expense_callback(callback: CallbackQuery):
         await callback.answer("❌ Error processing request")
 
 
-def _build_expense_confirmation_keyboard(confirmation_id: str, confirmation: Dict[str, Any]) -> InlineKeyboardMarkup:
+def _build_expense_confirmation_keyboard(
+    confirmation_id: str, confirmation: Dict[str, Any]
+) -> InlineKeyboardMarkup:
     """Build keyboard for expense confirmation."""
     language = confirmation["resolved_language"]
 
@@ -554,31 +658,35 @@ def _build_expense_confirmation_keyboard(confirmation_id: str, confirmation: Dic
         [
             InlineKeyboardButton(
                 text="✅ Confirm" if language == "en" else "✅ Confirmar",
-                callback_data=f"expense_confirm_{confirmation_id}"
+                callback_data=f"expense_confirm_{confirmation_id}",
             ),
             InlineKeyboardButton(
                 text="🏷️ Category" if language == "en" else "🏷️ Categoría",
-                callback_data=f"expense_category_{confirmation_id}"
-            )
+                callback_data=f"expense_category_{confirmation_id}",
+            ),
         ],
         [
             InlineKeyboardButton(
-                text="🔄 Toggle Necessity" if language == "en" else "🔄 Cambiar Necesidad",
-                callback_data=f"expense_necessity_{confirmation_id}"
+                text="🔄 Toggle Necessity"
+                if language == "en"
+                else "🔄 Cambiar Necesidad",
+                callback_data=f"expense_necessity_{confirmation_id}",
             )
         ],
         [
             InlineKeyboardButton(
                 text="❌ Cancel" if language == "en" else "❌ Cancelar",
-                callback_data=f"expense_cancel_{confirmation_id}"
+                callback_data=f"expense_cancel_{confirmation_id}",
             )
-        ]
+        ],
     ]
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def _build_category_selection_keyboard(confirmation_id: str, alternatives: list) -> InlineKeyboardMarkup:
+def _build_category_selection_keyboard(
+    confirmation_id: str, alternatives: list
+) -> InlineKeyboardMarkup:
     """Build keyboard for category selection."""
     buttons = []
 
@@ -586,20 +694,23 @@ def _build_category_selection_keyboard(confirmation_id: str, alternatives: list)
         category = alt["category"]
         # Replace spaces with underscores for callback data
         callback_category = category.replace(" ", "_")
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"🏷️ {category}",
-                callback_data=f"expense_setcat{callback_category}_{confirmation_id}"
-            )
-        ])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🏷️ {category}",
+                    callback_data=f"expense_setcat{callback_category}_{confirmation_id}",
+                )
+            ]
+        )
 
     # Add back button
-    buttons.append([
-        InlineKeyboardButton(
-            text="⬅️ Back",
-            callback_data=f"expense_back_{confirmation_id}"
-        )
-    ])
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="⬅️ Back", callback_data=f"expense_back_{confirmation_id}"
+            )
+        ]
+    )
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -612,7 +723,7 @@ def _format_expense_confirmation(confirmation: Dict[str, Any]) -> str:
 
     necessity_text = {
         "en": "necessary" if classification["is_necessary"] else "not necessary",
-        "es": "necesario" if classification["is_necessary"] else "no necesario"
+        "es": "necesario" if classification["is_necessary"] else "no necesario",
     }
 
     confidence_text = f"({classification['confidence']:.0%})"
@@ -621,12 +732,12 @@ def _format_expense_confirmation(confirmation: Dict[str, Any]) -> str:
         return f"""
 🔔 <b>Confirmación de Gasto</b>
 
-<b>Monto:</b> {expense['amount']:,.0f} {expense['currency']}
-<b>Comercio:</b> {expense['merchant']}
-<b>Descripción:</b> {expense['note'] or 'N/A'}
-<b>Fecha:</b> {expense['date']}
+<b>Monto:</b> {expense["amount"]:,.0f} {expense["currency"]}
+<b>Comercio:</b> {expense["merchant"]}
+<b>Descripción:</b> {expense["note"] or "N/A"}
+<b>Fecha:</b> {expense["date"]}
 
-<b>Categoría:</b> {classification['category']} {confidence_text}
+<b>Categoría:</b> {classification["category"]} {confidence_text}
 <b>Necesidad:</b> {necessity_text[language]}
 
 ¿Confirmar esta transacción?
@@ -635,12 +746,12 @@ def _format_expense_confirmation(confirmation: Dict[str, Any]) -> str:
         return f"""
 🔔 <b>Expense Confirmation</b>
 
-<b>Amount:</b> {expense['amount']:,.0f} {expense['currency']}
-<b>Merchant:</b> {expense['merchant']}
-<b>Description:</b> {expense['note'] or 'N/A'}
-<b>Date:</b> {expense['date']}
+<b>Amount:</b> {expense["amount"]:,.0f} {expense["currency"]}
+<b>Merchant:</b> {expense["merchant"]}
+<b>Description:</b> {expense["note"] or "N/A"}
+<b>Date:</b> {expense["date"]}
 
-<b>Category:</b> {classification['category']} {confidence_text}
+<b>Category:</b> {classification["category"]} {confidence_text}
 <b>Necessity:</b> {necessity_text[language]}
 
 Confirm this transaction?
@@ -667,12 +778,16 @@ def _format_analysis_response(analysis: Dict[str, Any]) -> str:
 
     if language == "es":
         budget_section = "\n<b>📋 Adherencia al Presupuesto:</b>\n"
-        budget_section += f"• Fijo: {actual['fixed']:.1f}% (objetivo {targets['fixed']:.1f}%)\n"
+        budget_section += (
+            f"• Fijo: {actual['fixed']:.1f}% (objetivo {targets['fixed']:.1f}%)\n"
+        )
         budget_section += f"• Variable necesario: {actual['variable_necessary']:.1f}% (objetivo {targets['variable_necessary']:.1f}%)\n"
         budget_section += f"• Discrecional: {actual['discretionary']:.1f}% (objetivo {targets['discretionary']:.1f}%)\n"
     else:
         budget_section = "\n<b>📋 Budget Adherence:</b>\n"
-        budget_section += f"• Fixed: {actual['fixed']:.1f}% (target {targets['fixed']:.1f}%)\n"
+        budget_section += (
+            f"• Fixed: {actual['fixed']:.1f}% (target {targets['fixed']:.1f}%)\n"
+        )
         budget_section += f"• Variable necessary: {actual['variable_necessary']:.1f}% (target {targets['variable_necessary']:.1f}%)\n"
         budget_section += f"• Discretionary: {actual['discretionary']:.1f}% (target {targets['discretionary']:.1f}%)\n"
 
@@ -694,9 +809,11 @@ def _format_recommendations(recommendations: list, language: str) -> str:
         rec_text = f"<b>{i}. {rec['title']}</b>\n"
         rec_text += f"   {rec['rationale']}\n"
 
-        if rec.get('est_monthly_savings'):
+        if rec.get("est_monthly_savings"):
             if language == "es":
-                rec_text += f"   💰 Ahorro estimado: ${rec['est_monthly_savings']:,.0f}/mes\n"
+                rec_text += (
+                    f"   💰 Ahorro estimado: ${rec['est_monthly_savings']:,.0f}/mes\n"
+                )
             else:
                 rec_text += f"   💰 Estimated savings: ${rec['est_monthly_savings']:,.0f}/month\n"
 
@@ -751,7 +868,9 @@ async def _parse_text_expense(text: str, user_id: int) -> Optional[Dict[str, Any
     return await _parse_voice_expense(text, user_id)
 
 
-async def _parse_voice_expense(transcription: str, user_id: int) -> Optional[Dict[str, Any]]:
+async def _parse_voice_expense(
+    transcription: str, user_id: int
+) -> Optional[Dict[str, Any]]:
     """
     Parse voice transcription to extract expense information.
 
@@ -770,26 +889,26 @@ async def _parse_voice_expense(transcription: str, user_id: int) -> Optional[Dic
     # Currency patterns - support both symbols and names
     # Order matters: check specific tokens before generic ones
     currency_patterns = {
-        'usdt': r'(?:usdt|tether)',  # Check USDT before USD
-        'btc': r'(?:btc|bitcoin)',
-        'usd': r'(?:usd|dollars?|bucks?|\$)',
-        'ars': r'(?:ars|pesos?|peso)',
-        'eur': r'(?:eur|euros?)',
+        "usdt": r"(?:usdt|tether)",  # Check USDT before USD
+        "btc": r"(?:btc|bitcoin)",
+        "usd": r"(?:usd|dollars?|bucks?|\$)",
+        "ars": r"(?:ars|pesos?|peso)",
+        "eur": r"(?:eur|euros?)",
     }
 
     # Amount patterns - support various formats
     amount_patterns = [
-        r'(\d+(?:[.,]\d+)?)\s*k\s*({currencies})',  # "50k USD"
-        r'(\d+(?:[.,]\d+)?)\s*({currencies})',      # "50 USD"
-        r'({currencies})\s*(\d+(?:[.,]\d+)?)',      # "USD 50"
-        r'(\d+(?:[.,]\d+)?)(?:\s*(?:dollars?|pesos?|euros?))', # "50 dollars"
+        r"(\d+(?:[.,]\d+)?)\s*k\s*({currencies})",  # "50k USD"
+        r"(\d+(?:[.,]\d+)?)\s*({currencies})",  # "50 USD"
+        r"({currencies})\s*(\d+(?:[.,]\d+)?)",  # "USD 50"
+        r"(\d+(?:[.,]\d+)?)(?:\s*(?:dollars?|pesos?|euros?))",  # "50 dollars"
     ]
 
     # Create combined currency pattern
-    all_currencies = '|'.join(currency_patterns.values())
+    all_currencies = "|".join(currency_patterns.values())
 
     amount = None
-    currency = 'USD'  # Default currency
+    currency = "USD"  # Default currency
 
     # Try to find amount and currency
     for pattern in amount_patterns:
@@ -804,8 +923,8 @@ async def _parse_voice_expense(transcription: str, user_id: int) -> Optional[Dic
             currency_str = None
 
             for group in groups:
-                if re.match(r'\d+(?:[.,]\d+)?', group):
-                    amount_str = group.replace(',', '.')
+                if re.match(r"\d+(?:[.,]\d+)?", group):
+                    amount_str = group.replace(",", ".")
                 else:
                     # Check if this group contains currency info
                     for curr_code, pattern in currency_patterns.items():
@@ -819,11 +938,11 @@ async def _parse_voice_expense(transcription: str, user_id: int) -> Optional[Dic
                     amount = float(amount_str)
 
                     # Handle "k" multiplier
-                    if 'k' in match.group(0).lower():
+                    if "k" in match.group(0).lower():
                         amount *= 1000
 
                     # If no currency detected in groups, search the whole match
-                    if currency == 'USD':  # Still default
+                    if currency == "USD":  # Still default
                         for curr_code, pattern in currency_patterns.items():
                             if re.search(pattern, match.group(0), re.IGNORECASE):
                                 currency = curr_code.upper()
@@ -842,11 +961,11 @@ async def _parse_voice_expense(transcription: str, user_id: int) -> Optional[Dic
 
     # Common spending phrases in English and Spanish
     spending_patterns = [
-        r'(?:spent|paid|bought|purchased)\s+.*?(?:at|from|in)\s+([^,.]+)',  # "spent 50 at Starbucks"
-        r'(?:gasté|pagué|compré)\s+.*?(?:en|de)\s+([^,.]+)',               # "gasté 50 en Starbucks"
-        r'(?:at|en)\s+([^,.]+)',                                           # "at Starbucks"
-        r'(?:from|de)\s+([^,.]+)',                                         # "from my account"
-        r'(?:for|para)\s+([^,.]+)',                                        # "for coffee"
+        r"(?:spent|paid|bought|purchased)\s+.*?(?:at|from|in)\s+([^,.]+)",  # "spent 50 at Starbucks"
+        r"(?:gasté|pagué|compré)\s+.*?(?:en|de)\s+([^,.]+)",  # "gasté 50 en Starbucks"
+        r"(?:at|en)\s+([^,.]+)",  # "at Starbucks"
+        r"(?:from|de)\s+([^,.]+)",  # "from my account"
+        r"(?:for|para)\s+([^,.]+)",  # "for coffee"
     ]
 
     for pattern in spending_patterns:
@@ -855,7 +974,9 @@ async def _parse_voice_expense(transcription: str, user_id: int) -> Optional[Dic
             extracted = match.group(1).strip()
 
             # Skip if it's just a currency or amount
-            if not re.match(r'^\d+|usd|ars|eur|dollars?|pesos?', extracted, re.IGNORECASE):
+            if not re.match(
+                r"^\d+|usd|ars|eur|dollars?|pesos?", extracted, re.IGNORECASE
+            ):
                 if not merchant:
                     merchant = extracted
                 elif extracted not in merchant.lower():
@@ -870,21 +991,38 @@ async def _parse_voice_expense(transcription: str, user_id: int) -> Optional[Dic
 
         for word in words:
             # Skip common words and currencies
-            if (len(word) > 2 and
-                word not in ['the', 'and', 'for', 'from', 'with', 'spent', 'paid', 'bought',
-                           'gasté', 'pagué', 'compré', 'para', 'con', 'desde'] and
-                not re.match(r'^\d+|usd|ars|eur', word, re.IGNORECASE)):
+            if (
+                len(word) > 2
+                and word
+                not in [
+                    "the",
+                    "and",
+                    "for",
+                    "from",
+                    "with",
+                    "spent",
+                    "paid",
+                    "bought",
+                    "gasté",
+                    "pagué",
+                    "compré",
+                    "para",
+                    "con",
+                    "desde",
+                ]
+                and not re.match(r"^\d+|usd|ars|eur", word, re.IGNORECASE)
+            ):
                 potential_merchants.append(word.title())
 
         if potential_merchants:
-            merchant = ' '.join(potential_merchants[:2])  # Take first 2 words
+            merchant = " ".join(potential_merchants[:2])  # Take first 2 words
 
     # Create note from remaining context
     if not note:
         # Look for descriptive phrases
         descriptive_patterns = [
-            r'(?:for|para)\s+([^,.]+)',
-            r'(?:buying|comprando)\s+([^,.]+)',
+            r"(?:for|para)\s+([^,.]+)",
+            r"(?:buying|comprando)\s+([^,.]+)",
         ]
 
         for pattern in descriptive_patterns:
@@ -904,11 +1042,13 @@ async def _parse_voice_expense(transcription: str, user_id: int) -> Optional[Dic
         "date": None,  # Will use today
         "merchant": merchant,
         "note": note,
-        "user_id": user_id
+        "user_id": user_id,
     }
 
 
-async def _create_confirmed_transaction(confirmation: Dict[str, Any], user_id: int) -> None:
+async def _create_confirmed_transaction(
+    confirmation: Dict[str, Any], user_id: int
+) -> None:
     """Create a confirmed transaction in the database."""
     expense = confirmation["expense"]
     classification = confirmation["classification"]
@@ -918,7 +1058,7 @@ async def _create_confirmed_transaction(confirmation: Dict[str, Any], user_id: i
         user_id=user_id,
         merchant=expense["merchant"],
         category=classification["category"],
-        is_necessary=classification["is_necessary"]
+        is_necessary=classification["is_necessary"],
     )
 
     # Create transaction in database
@@ -928,7 +1068,7 @@ async def _create_confirmed_transaction(confirmation: Dict[str, Any], user_id: i
             session=session,
             user_id=user_id,
             name="Default",
-            account_type=AccountType.WALLET
+            account_type=AccountType.WALLET,
         )
 
         # Create the transaction
@@ -940,5 +1080,7 @@ async def _create_confirmed_transaction(confirmation: Dict[str, Any], user_id: i
             amount=Decimal(str(expense["amount"])),
             date=datetime.strptime(expense["date"], "%Y-%m-%d"),
             account_from_id=account.id,
-            description=f"{expense['merchant']} - {expense['note']}" if expense['note'] else expense['merchant']
+            description=f"{expense['merchant']} - {expense['note']}"
+            if expense["note"]
+            else expense["merchant"],
         )

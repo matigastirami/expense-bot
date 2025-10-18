@@ -25,6 +25,7 @@ from src.db.models import TransactionType
 
 class ExpenseConfirmation(TypedDict):
     """Response schema for expense confirmation requests."""
+
     type: str  # "expense_confirmation"
     resolved_language: LanguageCode
     expense: Dict[str, Any]
@@ -35,6 +36,7 @@ class ExpenseConfirmation(TypedDict):
 
 class AnalysisReport(TypedDict):
     """Response schema for financial analysis reports."""
+
     type: str  # "analysis_report"
     resolved_language: LanguageCode
     period: Dict[str, str]
@@ -48,6 +50,7 @@ class AnalysisReport(TypedDict):
 
 class BudgetUpdate(TypedDict):
     """Response schema for budget updates."""
+
     type: str  # "budget_update"
     resolved_language: LanguageCode
     normalized_percentages: Dict[str, float]
@@ -58,6 +61,7 @@ class BudgetUpdate(TypedDict):
 @dataclass
 class CategoryMapping:
     """Maps expense categories to buckets and keywords."""
+
     category: str
     bucket: str
     keywords: List[str]
@@ -85,51 +89,259 @@ class FinancialAnalysisAgent:
         """Build the predefined category mappings with keywords and bucket assignments."""
         return [
             # Fixed bucket
-            CategoryMapping("Fixed", "fixed",
-                          ["rent", "alquiler", "utilities", "servicios", "insurance", "seguro",
-                           "subscription", "suscripcion", "mortgage", "hipoteca"], True),
-            CategoryMapping("Taxes/Fees", "fixed",
-                          ["tax", "impuesto", "fee", "tasa", "government", "gobierno", "iva", "ganancias"], True),
-            CategoryMapping("Debt/Loans", "fixed",
-                          ["credit", "credito", "loan", "prestamo", "debt", "deuda", "payment", "cuota"], True),
-
+            CategoryMapping(
+                "Fixed",
+                "fixed",
+                [
+                    "rent",
+                    "alquiler",
+                    "utilities",
+                    "servicios",
+                    "insurance",
+                    "seguro",
+                    "subscription",
+                    "suscripcion",
+                    "mortgage",
+                    "hipoteca",
+                ],
+                True,
+            ),
+            CategoryMapping(
+                "Taxes/Fees",
+                "fixed",
+                [
+                    "tax",
+                    "impuesto",
+                    "fee",
+                    "tasa",
+                    "government",
+                    "gobierno",
+                    "iva",
+                    "ganancias",
+                ],
+                True,
+            ),
+            CategoryMapping(
+                "Debt/Loans",
+                "fixed",
+                [
+                    "credit",
+                    "credito",
+                    "loan",
+                    "prestamo",
+                    "debt",
+                    "deuda",
+                    "payment",
+                    "cuota",
+                ],
+                True,
+            ),
             # Variable Necessary bucket
-            CategoryMapping("Groceries", "variable_necessary",
-                          ["grocery", "groceries", "food", "comida", "supermercado", "supermarket",
-                           "verduleria", "carniceria", "almacen"], True),
-            CategoryMapping("Transport", "variable_necessary",
-                          ["taxi", "uber", "gas", "nafta", "transport", "transporte", "bus", "colectivo",
-                           "subway", "subte", "train", "tren", "parking", "estacionamiento"], True),
-            CategoryMapping("Health", "variable_necessary",
-                          ["medical", "medico", "health", "salud", "pharmacy", "farmacia", "doctor",
-                           "hospital", "medicine", "medicina", "dental", "odonto"], True),
-            CategoryMapping("Education", "variable_necessary",
-                          ["school", "colegio", "course", "curso", "education", "educacion", "university",
-                           "universidad", "book", "libro", "tuition", "matricula"], True),
-            CategoryMapping("Childcare", "variable_necessary",
-                          ["childcare", "guarderia", "daycare", "nanny", "niñera", "school", "colegio"], True),
-            CategoryMapping("Business", "variable_necessary",
-                          ["office", "oficina", "work", "trabajo", "business", "negocio", "professional",
-                           "profesional", "meeting", "reunion"], True),
-
+            CategoryMapping(
+                "Groceries",
+                "variable_necessary",
+                [
+                    "grocery",
+                    "groceries",
+                    "food",
+                    "comida",
+                    "supermercado",
+                    "supermarket",
+                    "verduleria",
+                    "carniceria",
+                    "almacen",
+                ],
+                True,
+            ),
+            CategoryMapping(
+                "Transport",
+                "variable_necessary",
+                [
+                    "taxi",
+                    "uber",
+                    "gas",
+                    "nafta",
+                    "transport",
+                    "transporte",
+                    "bus",
+                    "colectivo",
+                    "subway",
+                    "subte",
+                    "train",
+                    "tren",
+                    "parking",
+                    "estacionamiento",
+                ],
+                True,
+            ),
+            CategoryMapping(
+                "Health",
+                "variable_necessary",
+                [
+                    "medical",
+                    "medico",
+                    "health",
+                    "salud",
+                    "pharmacy",
+                    "farmacia",
+                    "doctor",
+                    "hospital",
+                    "medicine",
+                    "medicina",
+                    "dental",
+                    "odonto",
+                ],
+                True,
+            ),
+            CategoryMapping(
+                "Education",
+                "variable_necessary",
+                [
+                    "school",
+                    "colegio",
+                    "course",
+                    "curso",
+                    "education",
+                    "educacion",
+                    "university",
+                    "universidad",
+                    "book",
+                    "libro",
+                    "tuition",
+                    "matricula",
+                ],
+                True,
+            ),
+            CategoryMapping(
+                "Childcare",
+                "variable_necessary",
+                [
+                    "childcare",
+                    "guarderia",
+                    "daycare",
+                    "nanny",
+                    "niñera",
+                    "school",
+                    "colegio",
+                ],
+                True,
+            ),
+            CategoryMapping(
+                "Business",
+                "variable_necessary",
+                [
+                    "office",
+                    "oficina",
+                    "work",
+                    "trabajo",
+                    "business",
+                    "negocio",
+                    "professional",
+                    "profesional",
+                    "meeting",
+                    "reunion",
+                ],
+                True,
+            ),
             # Discretionary bucket
-            CategoryMapping("Dining/Delivery", "discretionary",
-                          ["restaurant", "restaurante", "delivery", "pedidos", "cafe", "bar", "pizza",
-                           "mcdonalds", "starbucks", "burger", "hamburgesa", "rappi", "uber eats", "coffee"], False),
-            CategoryMapping("Leisure/Entertainment", "discretionary",
-                          ["movie", "cine", "games", "juegos", "entertainment", "entretenimiento",
-                           "sport", "deporte", "gym", "gimnasio", "netflix", "spotify", "concert"], False),
-            CategoryMapping("Shopping", "discretionary",
-                          ["clothes", "ropa", "electronics", "electronica", "shopping", "compras",
-                           "amazon", "mercadolibre", "store", "tienda", "mall"], False),
-            CategoryMapping("Travel", "discretionary",
-                          ["hotel", "flight", "vuelo", "travel", "viaje", "vacation", "vacaciones",
-                           "airbnb", "booking", "trip"], False),
-            CategoryMapping("Gifts/Donations", "discretionary",
-                          ["gift", "regalo", "charity", "caridad", "donation", "donacion", "birthday",
-                           "cumpleanos", "present"], False),
-            CategoryMapping("Misc", "discretionary",
-                          ["other", "otro", "miscellaneous", "varios", "misc"], False),
+            CategoryMapping(
+                "Dining/Delivery",
+                "discretionary",
+                [
+                    "restaurant",
+                    "restaurante",
+                    "delivery",
+                    "pedidos",
+                    "cafe",
+                    "bar",
+                    "pizza",
+                    "mcdonalds",
+                    "starbucks",
+                    "burger",
+                    "hamburgesa",
+                    "rappi",
+                    "uber eats",
+                    "coffee",
+                ],
+                False,
+            ),
+            CategoryMapping(
+                "Leisure/Entertainment",
+                "discretionary",
+                [
+                    "movie",
+                    "cine",
+                    "games",
+                    "juegos",
+                    "entertainment",
+                    "entretenimiento",
+                    "sport",
+                    "deporte",
+                    "gym",
+                    "gimnasio",
+                    "netflix",
+                    "spotify",
+                    "concert",
+                ],
+                False,
+            ),
+            CategoryMapping(
+                "Shopping",
+                "discretionary",
+                [
+                    "clothes",
+                    "ropa",
+                    "electronics",
+                    "electronica",
+                    "shopping",
+                    "compras",
+                    "amazon",
+                    "mercadolibre",
+                    "store",
+                    "tienda",
+                    "mall",
+                ],
+                False,
+            ),
+            CategoryMapping(
+                "Travel",
+                "discretionary",
+                [
+                    "hotel",
+                    "flight",
+                    "vuelo",
+                    "travel",
+                    "viaje",
+                    "vacation",
+                    "vacaciones",
+                    "airbnb",
+                    "booking",
+                    "trip",
+                ],
+                False,
+            ),
+            CategoryMapping(
+                "Gifts/Donations",
+                "discretionary",
+                [
+                    "gift",
+                    "regalo",
+                    "charity",
+                    "caridad",
+                    "donation",
+                    "donacion",
+                    "birthday",
+                    "cumpleanos",
+                    "present",
+                ],
+                False,
+            ),
+            CategoryMapping(
+                "Misc",
+                "discretionary",
+                ["other", "otro", "miscellaneous", "varios", "misc"],
+                False,
+            ),
         ]
 
     async def process_expense_confirmation(
@@ -139,7 +351,8 @@ class FinancialAnalysisAgent:
         date: Optional[datetime],
         merchant: str,
         note: str,
-        user_id: int
+        user_id: int,
+        language: Optional[str] = None,
     ) -> ExpenseConfirmation:
         """
         Process an expense and return confirmation details with classification.
@@ -151,13 +364,15 @@ class FinancialAnalysisAgent:
             merchant: Merchant/vendor name
             note: Additional description
             user_id: User identifier
+            language: Optional language code (es/en). If not provided, will auto-detect.
 
         Returns:
             ExpenseConfirmation with detected language, classification, and UI text
         """
-        # Detect language from combined text
-        combined_text = f"{merchant} {note}".strip()
-        language = detect_language(combined_text)
+        # Detect language from combined text if not provided
+        if not language:
+            combined_text = f"{merchant} {note}".strip()
+            language = detect_language(combined_text)
 
         # Use today if no date provided
         if date is None:
@@ -175,14 +390,12 @@ class FinancialAnalysisAgent:
             "currency": currency,
             "date": date.strftime("%Y-%m-%d"),
             "merchant": merchant,
-            "note": note
+            "note": note,
         }
 
         # Generate confirmation text
         ui_text = self._generate_confirmation_text(
-            classification["category"],
-            classification["is_necessary"],
-            language
+            classification["category"], classification["is_necessary"], language
         )
 
         return ExpenseConfirmation(
@@ -192,12 +405,14 @@ class FinancialAnalysisAgent:
             classification=classification,
             memory_updates_if_user_confirms_changes={
                 "merchant_to_category": None,
-                "merchant_necessity_override": classification["is_necessary"]
+                "merchant_necessity_override": classification["is_necessary"],
             },
-            ui_confirmation_text=ui_text
+            ui_confirmation_text=ui_text,
         )
 
-    def _classify_expense(self, merchant: str, note: str, user_memory: Dict[str, Any]) -> Dict[str, Any]:
+    def _classify_expense(
+        self, merchant: str, note: str, user_memory: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Classify an expense based on merchant, note, and user memory.
 
@@ -209,13 +424,15 @@ class FinancialAnalysisAgent:
         merchant_lower = merchant.lower()
         if merchant_lower in user_memory.get("merchant_to_category", {}):
             learned_category = user_memory["merchant_to_category"][merchant_lower]
-            learned_necessity = user_memory.get("merchant_necessity_override", {}).get(merchant_lower, True)
+            learned_necessity = user_memory.get("merchant_necessity_override", {}).get(
+                merchant_lower, True
+            )
 
             return {
                 "category": learned_category,
                 "is_necessary": learned_necessity,
                 "confidence": 0.95,  # High confidence for learned preferences
-                "alternatives": self._get_alternative_categories(learned_category)
+                "alternatives": self._get_alternative_categories(learned_category),
             }
 
         # Find best matching category
@@ -228,7 +445,7 @@ class FinancialAnalysisAgent:
             matches = 0
             for keyword in mapping.keywords:
                 # Use word boundaries to avoid partial matches like "tax" in "Starbucks"
-                pattern = r'\b' + re.escape(keyword) + r'\b'
+                pattern = r"\b" + re.escape(keyword) + r"\b"
                 if re.search(pattern, combined_text, re.IGNORECASE):
                     score += 1
                     matches += 1
@@ -253,10 +470,12 @@ class FinancialAnalysisAgent:
             "category": category,
             "is_necessary": is_necessary,
             "confidence": confidence,
-            "alternatives": self._get_alternative_categories(category)
+            "alternatives": self._get_alternative_categories(category),
         }
 
-    def _get_alternative_categories(self, current_category: str) -> List[Dict[str, str]]:
+    def _get_alternative_categories(
+        self, current_category: str
+    ) -> List[Dict[str, str]]:
         """Get alternative category suggestions."""
         alternatives = []
 
@@ -269,36 +488,52 @@ class FinancialAnalysisAgent:
 
         if current_bucket:
             for mapping in self._category_mappings:
-                if mapping.bucket == current_bucket and mapping.category != current_category:
-                    alternatives.append({
-                        "category": mapping.category,
-                        "reason": f"Same bucket ({current_bucket})"
-                    })
+                if (
+                    mapping.bucket == current_bucket
+                    and mapping.category != current_category
+                ):
+                    alternatives.append(
+                        {
+                            "category": mapping.category,
+                            "reason": f"Same bucket ({current_bucket})",
+                        }
+                    )
 
         # Add some cross-bucket alternatives
         if len(alternatives) < 3:
-            common_alternatives = ["Groceries", "Dining/Delivery", "Shopping", "Transport"]
+            common_alternatives = [
+                "Groceries",
+                "Dining/Delivery",
+                "Shopping",
+                "Transport",
+            ]
             for cat in common_alternatives:
-                if cat != current_category and not any(alt["category"] == cat for alt in alternatives):
-                    alternatives.append({
-                        "category": cat,
-                        "reason": f"Common alternative to {current_category}"
-                    })
+                if cat != current_category and not any(
+                    alt["category"] == cat for alt in alternatives
+                ):
+                    alternatives.append(
+                        {
+                            "category": cat,
+                            "reason": f"Common alternative to {current_category}",
+                        }
+                    )
                     if len(alternatives) >= 3:
                         break
 
         return alternatives[:3]  # Limit to 3 alternatives
 
-    def _generate_confirmation_text(self, category: str, is_necessary: bool, language: LanguageCode) -> str:
+    def _generate_confirmation_text(
+        self, category: str, is_necessary: bool, language: LanguageCode
+    ) -> str:
         """Generate confirmation text in the appropriate language."""
         necessity_text = {
             "en": "necessary" if is_necessary else "not necessary",
-            "es": "necesario" if is_necessary else "no necesario"
+            "es": "necesario" if is_necessary else "no necesario",
         }
 
         base_text = {
             "en": f"I detected {category} ({necessity_text[language]}). Change it?",
-            "es": f"Detecté {category} ({necessity_text[language]}). ¿Cambiar?"
+            "es": f"Detecté {category} ({necessity_text[language]}). ¿Cambiar?",
         }
 
         return base_text[language]
@@ -320,11 +555,10 @@ class FinancialAnalysisAgent:
 
         # Get user memory for budget targets
         user_memory = await self._get_user_memory(user_id)
-        budget_targets = user_memory.get("budget_targets", {
-            "fixed": 50.0,
-            "variable_necessary": 30.0,
-            "discretionary": 20.0
-        })
+        budget_targets = user_memory.get(
+            "budget_targets",
+            {"fixed": 50.0, "variable_necessary": 30.0, "discretionary": 20.0},
+        )
 
         # Query transactions for the period
         async with async_session_maker() as session:
@@ -347,17 +581,19 @@ class FinancialAnalysisAgent:
             resolved_language=language,
             period={
                 "start": start_date.strftime("%Y-%m-%d"),
-                "end": end_date.strftime("%Y-%m-%d")
+                "end": end_date.strftime("%Y-%m-%d"),
             },
             totals=analysis["totals"],
             budget_targets_pct=budget_targets,
             budget_actual_pct=analysis["actual_pct"],
             signals=signals,
             recommendations=recommendations,
-            human_summary=human_summary
+            human_summary=human_summary,
         )
 
-    def _parse_period(self, period_text: str, language: LanguageCode) -> Tuple[datetime, datetime]:
+    def _parse_period(
+        self, period_text: str, language: LanguageCode
+    ) -> Tuple[datetime, datetime]:
         """
         Parse natural language period descriptions into date ranges.
 
@@ -373,8 +609,8 @@ class FinancialAnalysisAgent:
 
         # Date range patterns (YYYY-MM-DD format)
         date_range_patterns = [
-            r'from\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})',
-            r'desde\s+(\d{4}-\d{2}-\d{2})\s+hasta\s+(\d{4}-\d{2}-\d{2})'
+            r"from\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})",
+            r"desde\s+(\d{4}-\d{2}-\d{2})\s+hasta\s+(\d{4}-\d{2}-\d{2})",
         ]
 
         for pattern in date_range_patterns:
@@ -391,7 +627,9 @@ class FinancialAnalysisAgent:
         else:
             return self._parse_english_period(period_lower, now)
 
-    def _parse_spanish_period(self, period_lower: str, now: datetime) -> Tuple[datetime, datetime]:
+    def _parse_spanish_period(
+        self, period_lower: str, now: datetime
+    ) -> Tuple[datetime, datetime]:
         """Parse Spanish period expressions."""
         if "hoy" in period_lower:
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -399,16 +637,20 @@ class FinancialAnalysisAgent:
             return start, end
 
         if "ayer" in period_lower:
-            start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            start = (now - timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
             end = start + timedelta(days=1)
             return start, end
 
         # "últimos X días"
-        match = re.search(r'últimos?\s+(\d+)\s+días?', period_lower)
+        match = re.search(r"últimos?\s+(\d+)\s+días?", period_lower)
         if match:
             days = int(match.group(1))
             end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-            start = (now - timedelta(days=days-1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            start = (now - timedelta(days=days - 1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
             return start, end
 
         # Week patterns
@@ -436,28 +678,63 @@ class FinancialAnalysisAgent:
 
         if "el mes pasado" in period_lower or "mes anterior" in period_lower:
             if now.month == 1:
-                start = now.replace(year=now.year - 1, month=12, day=1, hour=0, minute=0, second=0, microsecond=0)
+                start = now.replace(
+                    year=now.year - 1,
+                    month=12,
+                    day=1,
+                    hour=0,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
+                )
                 end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             else:
-                start = now.replace(month=now.month - 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                start = now.replace(
+                    month=now.month - 1,
+                    day=1,
+                    hour=0,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
+                )
                 end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             return start, end
 
         # Year patterns
         if "este año" in period_lower:
-            start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            start = now.replace(
+                month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+            )
             end = start.replace(year=start.year + 1)
             return start, end
 
         if "el año pasado" in period_lower or "año anterior" in period_lower:
-            start = now.replace(year=now.year - 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            start = now.replace(
+                year=now.year - 1,
+                month=1,
+                day=1,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
             end = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
             return start, end
 
         # Spanish month names
         spanish_months = {
-            'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6,
-            'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
+            "enero": 1,
+            "febrero": 2,
+            "marzo": 3,
+            "abril": 4,
+            "mayo": 5,
+            "junio": 6,
+            "julio": 7,
+            "agosto": 8,
+            "septiembre": 9,
+            "octubre": 10,
+            "noviembre": 11,
+            "diciembre": 12,
         }
 
         for month_name, month_num in spanish_months.items():
@@ -474,10 +751,14 @@ class FinancialAnalysisAgent:
 
         # Default to last 30 days
         end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-        start = (now - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+        start = (now - timedelta(days=29)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         return start, end
 
-    def _parse_english_period(self, period_lower: str, now: datetime) -> Tuple[datetime, datetime]:
+    def _parse_english_period(
+        self, period_lower: str, now: datetime
+    ) -> Tuple[datetime, datetime]:
         """Parse English period expressions."""
         if "today" in period_lower:
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -485,16 +766,20 @@ class FinancialAnalysisAgent:
             return start, end
 
         if "yesterday" in period_lower:
-            start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            start = (now - timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
             end = start + timedelta(days=1)
             return start, end
 
         # "last X days"
-        match = re.search(r'last\s+(\d+)\s+days?', period_lower)
+        match = re.search(r"last\s+(\d+)\s+days?", period_lower)
         if match:
             days = int(match.group(1))
             end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-            start = (now - timedelta(days=days-1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            start = (now - timedelta(days=days - 1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
             return start, end
 
         # Week patterns
@@ -522,28 +807,63 @@ class FinancialAnalysisAgent:
 
         if "last month" in period_lower:
             if now.month == 1:
-                start = now.replace(year=now.year - 1, month=12, day=1, hour=0, minute=0, second=0, microsecond=0)
+                start = now.replace(
+                    year=now.year - 1,
+                    month=12,
+                    day=1,
+                    hour=0,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
+                )
                 end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             else:
-                start = now.replace(month=now.month - 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                start = now.replace(
+                    month=now.month - 1,
+                    day=1,
+                    hour=0,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
+                )
                 end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             return start, end
 
         # Year patterns
         if "this year" in period_lower:
-            start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            start = now.replace(
+                month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+            )
             end = start.replace(year=start.year + 1)
             return start, end
 
         if "last year" in period_lower:
-            start = now.replace(year=now.year - 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            start = now.replace(
+                year=now.year - 1,
+                month=1,
+                day=1,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
             end = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
             return start, end
 
         # English month names
         english_months = {
-            'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
-            'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12
+            "january": 1,
+            "february": 2,
+            "march": 3,
+            "april": 4,
+            "may": 5,
+            "june": 6,
+            "july": 7,
+            "august": 8,
+            "september": 9,
+            "october": 10,
+            "november": 11,
+            "december": 12,
         }
 
         for month_name, month_num in english_months.items():
@@ -560,13 +880,24 @@ class FinancialAnalysisAgent:
 
         # Default to last 30 days
         end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-        start = (now - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+        start = (now - timedelta(days=29)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         return start, end
 
-    def _analyze_transactions(self, transactions: List, budget_targets: Dict[str, float], language: LanguageCode) -> Dict[str, Any]:
+    def _analyze_transactions(
+        self,
+        transactions: List,
+        budget_targets: Dict[str, float],
+        language: LanguageCode,
+    ) -> Dict[str, Any]:
         """Analyze transactions and calculate spending by category and bucket."""
         by_category = {}
-        by_bucket = {"fixed": Decimal("0"), "variable_necessary": Decimal("0"), "discretionary": Decimal("0")}
+        by_bucket = {
+            "fixed": Decimal("0"),
+            "variable_necessary": Decimal("0"),
+            "discretionary": Decimal("0"),
+        }
         total_expenses = Decimal("0")
         currency = "USD"  # Default currency
 
@@ -602,9 +933,9 @@ class FinancialAnalysisAgent:
                 "currency": currency,
                 "total_expenses": float(total_expenses),
                 "by_bucket": {k: float(v) for k, v in by_bucket.items()},
-                "by_category": {k: float(v) for k, v in by_category.items()}
+                "by_category": {k: float(v) for k, v in by_category.items()},
             },
-            "actual_pct": actual_pct
+            "actual_pct": actual_pct,
         }
 
     def _classify_transaction_to_category(self, transaction) -> str:
@@ -626,17 +957,21 @@ class FinancialAnalysisAgent:
                 return mapping.bucket
         return "discretionary"  # Default bucket
 
-    def _generate_signals(self, transactions: List, language: LanguageCode) -> Dict[str, Any]:
+    def _generate_signals(
+        self, transactions: List, language: LanguageCode
+    ) -> Dict[str, Any]:
         """Generate financial signals and insights from transaction data."""
         return {
             "outliers": [],
             "small_leaks": [],
             "recurring_merchants": [],
             "possible_duplicates": [],
-            "trends_vs_prev_period": {"total_delta_pct": 0.0}
+            "trends_vs_prev_period": {"total_delta_pct": 0.0},
         }
 
-    def _generate_recommendations(self, analysis: Dict[str, Any], signals: Dict[str, Any], language: LanguageCode) -> List[Dict[str, Any]]:
+    def _generate_recommendations(
+        self, analysis: Dict[str, Any], signals: Dict[str, Any], language: LanguageCode
+    ) -> List[Dict[str, Any]]:
         """Generate actionable financial recommendations."""
         recommendations = []
 
@@ -646,24 +981,34 @@ class FinancialAnalysisAgent:
             discretionary_amount = totals["by_bucket"].get("discretionary", 0)
             if discretionary_amount > totals["total_expenses"] * 0.25:  # More than 25%
                 rec = {
-                    "title": "Reduce discretionary spending" if language == "en" else "Reducir gastos discrecionales",
-                    "rationale": "You're spending more than recommended on discretionary items" if language == "en"
-                               else "Estás gastando más de lo recomendado en artículos discrecionales",
+                    "title": "Reduce discretionary spending"
+                    if language == "en"
+                    else "Reducir gastos discrecionales",
+                    "rationale": "You're spending more than recommended on discretionary items"
+                    if language == "en"
+                    else "Estás gastando más de lo recomendado en artículos discrecionales",
                     "est_monthly_savings": discretionary_amount * 0.1,
                     "est_annual_savings": discretionary_amount * 0.1 * 12,
                     "category": "discretionary",
                     "action_steps": [
-                        "Review recent transactions in this category" if language == "en"
+                        "Review recent transactions in this category"
+                        if language == "en"
                         else "Revisar transacciones recientes en esta categoría",
-                        "Set spending alerts" if language == "en" else "Configurar alertas de gasto",
-                        "Find cheaper alternatives" if language == "en" else "Buscar alternativas más baratas"
-                    ]
+                        "Set spending alerts"
+                        if language == "en"
+                        else "Configurar alertas de gasto",
+                        "Find cheaper alternatives"
+                        if language == "en"
+                        else "Buscar alternativas más baratas",
+                    ],
                 }
                 recommendations.append(rec)
 
         return recommendations
 
-    def _generate_human_summary(self, analysis: Dict[str, Any], language: LanguageCode) -> str:
+    def _generate_human_summary(
+        self, analysis: Dict[str, Any], language: LanguageCode
+    ) -> str:
         """Generate a human-readable summary of the financial analysis."""
         totals = analysis["totals"]
         currency = totals["currency"]
@@ -674,14 +1019,14 @@ class FinancialAnalysisAgent:
                 f"• Total de gastos: {total:,.0f} {currency}",
                 f"• Fijos: {totals['by_bucket']['fixed']:,.0f} {currency} ({analysis['actual_pct']['fixed']:.0f}%)",
                 f"• Variables necesarios: {totals['by_bucket']['variable_necessary']:,.0f} {currency} ({analysis['actual_pct']['variable_necessary']:.0f}%)",
-                f"• Discrecionales: {totals['by_bucket']['discretionary']:,.0f} {currency} ({analysis['actual_pct']['discretionary']:.0f}%)"
+                f"• Discrecionales: {totals['by_bucket']['discretionary']:,.0f} {currency} ({analysis['actual_pct']['discretionary']:.0f}%)",
             ]
         else:
             lines = [
                 f"• Total expenses: {currency} {total:,.0f}",
                 f"• Fixed: {currency} {totals['by_bucket']['fixed']:,.0f} ({analysis['actual_pct']['fixed']:.0f}%)",
                 f"• Variable necessary: {currency} {totals['by_bucket']['variable_necessary']:,.0f} ({analysis['actual_pct']['variable_necessary']:.0f}%)",
-                f"• Discretionary: {currency} {totals['by_bucket']['discretionary']:,.0f} ({analysis['actual_pct']['discretionary']:.0f}%)"
+                f"• Discretionary: {currency} {totals['by_bucket']['discretionary']:,.0f} ({analysis['actual_pct']['discretionary']:.0f}%)",
             ]
 
         return "\n".join(lines)
@@ -708,7 +1053,8 @@ class FinancialAnalysisAgent:
 
         if abs(total_pct - 100.0) > 0.1:  # Allow small rounding errors
             validation_notes.append(
-                f"Percentages sum to {total_pct:.1f}%, normalizing to 100%" if language == "en"
+                f"Percentages sum to {total_pct:.1f}%, normalizing to 100%"
+                if language == "en"
                 else f"Los porcentajes suman {total_pct:.1f}%, normalizando a 100%"
             )
 
@@ -730,18 +1076,28 @@ class FinancialAnalysisAgent:
             resolved_language=language,
             normalized_percentages=percentages,
             validation_notes=validation_notes,
-            confirmation_text=confirmation_text
+            confirmation_text=confirmation_text,
         )
 
     def _parse_budget_percentages(self, budget_text: str) -> Dict[str, float]:
         """Parse budget percentages from text input."""
-        percentages = {"fixed": 50.0, "variable_necessary": 30.0, "discretionary": 20.0}  # Defaults
+        percentages = {
+            "fixed": 50.0,
+            "variable_necessary": 30.0,
+            "discretionary": 20.0,
+        }  # Defaults
 
         # Extract percentages with various patterns
         patterns = [
-            (r'(\d+(?:\.\d+)?)%?\s*(?:fixed|fijo)', 'fixed'),
-            (r'(\d+(?:\.\d+)?)%?\s*(?:necessary|necesario|variable)', 'variable_necessary'),
-            (r'(\d+(?:\.\d+)?)%?\s*(?:discretionary|discrecional|optional)', 'discretionary'),
+            (r"(\d+(?:\.\d+)?)%?\s*(?:fixed|fijo)", "fixed"),
+            (
+                r"(\d+(?:\.\d+)?)%?\s*(?:necessary|necesario|variable)",
+                "variable_necessary",
+            ),
+            (
+                r"(\d+(?:\.\d+)?)%?\s*(?:discretionary|discrecional|optional)",
+                "discretionary",
+            ),
         ]
 
         text_lower = budget_text.lower()
@@ -752,18 +1108,26 @@ class FinancialAnalysisAgent:
 
         return percentages
 
-    def _format_budget_confirmation(self, percentages: Dict[str, float], language: LanguageCode) -> str:
+    def _format_budget_confirmation(
+        self, percentages: Dict[str, float], language: LanguageCode
+    ) -> str:
         """Format budget confirmation message."""
         if language == "es":
-            return (f"Presupuesto actualizado: {percentages['fixed']:.1f}% fijo, "
-                   f"{percentages['variable_necessary']:.1f}% variable necesario, "
-                   f"{percentages['discretionary']:.1f}% discrecional")
+            return (
+                f"Presupuesto actualizado: {percentages['fixed']:.1f}% fijo, "
+                f"{percentages['variable_necessary']:.1f}% variable necesario, "
+                f"{percentages['discretionary']:.1f}% discrecional"
+            )
         else:
-            return (f"Budget updated: {percentages['fixed']:.1f}% fixed, "
-                   f"{percentages['variable_necessary']:.1f}% variable necessary, "
-                   f"{percentages['discretionary']:.1f}% discretionary")
+            return (
+                f"Budget updated: {percentages['fixed']:.1f}% fixed, "
+                f"{percentages['variable_necessary']:.1f}% variable necessary, "
+                f"{percentages['discretionary']:.1f}% discretionary"
+            )
 
-    async def update_user_memory(self, user_id: int, merchant: str, category: str, is_necessary: bool) -> None:
+    async def update_user_memory(
+        self, user_id: int, merchant: str, category: str, is_necessary: bool
+    ) -> None:
         """
         Update user memory with learning corrections.
 
@@ -796,8 +1160,8 @@ class FinancialAnalysisAgent:
                 "budget_targets": {
                     "fixed": 50.0,
                     "variable_necessary": 30.0,
-                    "discretionary": 20.0
-                }
+                    "discretionary": 20.0,
+                },
             }
         return self._user_memory[user_id]
 
