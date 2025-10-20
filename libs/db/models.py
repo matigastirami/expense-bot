@@ -19,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Enum as SQLEnum
 
-from src.db.base import Base
+from libs.db.base import Base
 
 
 class AccountType(str, Enum):
@@ -45,16 +45,21 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    telegram_user_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    telegram_user_id: Mapped[Optional[str]] = mapped_column(
+        String(50), unique=True, nullable=True
+    )
     first_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     last_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    phone_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    password: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     language_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     balance_tracking_mode: Mapped[str] = mapped_column(
-        SQLEnum('strict', 'logging', name='balancetrackingmode', native_enum=True),
+        SQLEnum("strict", "logging", name="balancetrackingmode", native_enum=True),
         default=BalanceTrackingMode.STRICT,
-        nullable=False
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -74,18 +79,23 @@ class User(Base):
         "PendingTransaction", back_populates="user", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (
-        Index("ix_users_telegram_user_id", "telegram_user_id"),
-    )
+    __table_args__ = (Index("ix_users_telegram_user_id", "telegram_user_id"),)
 
 
 class Account(Base):
     __tablename__ = "accounts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    type: Mapped[str] = mapped_column(SQLEnum('bank', 'wallet', 'cash', 'other', name='accounttype', native_enum=True), nullable=False)
+    type: Mapped[str] = mapped_column(
+        SQLEnum(
+            "bank", "wallet", "cash", "other", name="accounttype", native_enum=True
+        ),
+        nullable=False,
+    )
     track_balance: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -130,9 +140,19 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
     type: Mapped[str] = mapped_column(
-        SQLEnum('income', 'expense', 'transfer', 'conversion', name='transactiontype', native_enum=True), nullable=False
+        SQLEnum(
+            "income",
+            "expense",
+            "transfer",
+            "conversion",
+            name="transactiontype",
+            native_enum=True,
+        ),
+        nullable=False,
     )
     account_from_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("accounts.id"), nullable=True
@@ -203,9 +223,19 @@ class PendingTransaction(Base):
     __tablename__ = "pending_transactions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
     transaction_type: Mapped[str] = mapped_column(
-        SQLEnum('income', 'expense', 'transfer', 'conversion', name='transactiontype', native_enum=True), nullable=False
+        SQLEnum(
+            "income",
+            "expense",
+            "transfer",
+            "conversion",
+            name="transactiontype",
+            native_enum=True,
+        ),
+        nullable=False,
     )
     account_from_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("accounts.id"), nullable=True

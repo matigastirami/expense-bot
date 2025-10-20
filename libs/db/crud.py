@@ -6,12 +6,23 @@ from sqlalchemy import and_, desc, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.db.models import Account, AccountBalance, AccountType, ExchangeRate, PendingTransaction, Transaction, TransactionType, User
+from libs.db.models import (
+    Account,
+    AccountBalance,
+    AccountType,
+    ExchangeRate,
+    PendingTransaction,
+    Transaction,
+    TransactionType,
+    User,
+)
 
 
 class UserCRUD:
     @staticmethod
-    async def get_by_telegram_id(session: AsyncSession, telegram_user_id: str) -> Optional[User]:
+    async def get_by_telegram_id(
+        session: AsyncSession, telegram_user_id: str
+    ) -> Optional[User]:
         result = await session.execute(
             select(User).where(User.telegram_user_id == telegram_user_id)
         )
@@ -20,18 +31,24 @@ class UserCRUD:
     @staticmethod
     async def create(
         session: AsyncSession,
-        telegram_user_id: str,
+        telegram_user_id: Optional[str] = None,
         first_name: Optional[str] = None,
         last_name: Optional[str] = None,
         username: Optional[str] = None,
         language_code: Optional[str] = None,
+        email: Optional[str] = None,
+        phone_number: Optional[str] = None,
+        password: Optional[str] = None
     ) -> User:
         user = User(
             telegram_user_id=telegram_user_id,
             first_name=first_name,
             last_name=last_name,
             username=username,
-            language_code=language_code
+            language_code=language_code,
+            email=email,
+            phone_number=phone_number,
+            password=password
         )
         session.add(user)
         await session.commit()
@@ -50,23 +67,35 @@ class UserCRUD:
         user = await UserCRUD.get_by_telegram_id(session, telegram_user_id)
         if not user:
             user = await UserCRUD.create(
-                session, telegram_user_id, first_name, last_name, username, language_code
+                session,
+                telegram_user_id,
+                first_name,
+                last_name,
+                username,
+                language_code,
             )
         return user
 
     @staticmethod
+    async def get_by_email(session: AsyncSession, email: int) -> Optional[User]:
+        result = await session.execute(
+            select(User).where(User.email == email)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
     async def update_last_activity(session: AsyncSession, user_id: int) -> None:
         await session.execute(
-            update(User)
-            .where(User.id == user_id)
-            .values(updated_at=func.now())
+            update(User).where(User.id == user_id).values(updated_at=func.now())
         )
         await session.commit()
 
 
 class AccountCRUD:
     @staticmethod
-    async def get_by_name(session: AsyncSession, user_id: int, name: str) -> Optional[Account]:
+    async def get_by_name(
+        session: AsyncSession, user_id: int, name: str
+    ) -> Optional[Account]:
         result = await session.execute(
             select(Account)
             .where(and_(Account.user_id == user_id, Account.name == name))
@@ -86,7 +115,9 @@ class AccountCRUD:
         return account
 
     @staticmethod
-    async def get_all_with_balances(session: AsyncSession, user_id: int) -> List[Account]:
+    async def get_all_with_balances(
+        session: AsyncSession, user_id: int
+    ) -> List[Account]:
         result = await session.execute(
             select(Account)
             .where(Account.user_id == user_id)
@@ -96,7 +127,10 @@ class AccountCRUD:
 
     @staticmethod
     async def get_or_create(
-        session: AsyncSession, user_id: int, name: str, account_type: AccountType = AccountType.OTHER
+        session: AsyncSession,
+        user_id: int,
+        name: str,
+        account_type: AccountType = AccountType.OTHER,
     ) -> Account:
         account = await AccountCRUD.get_by_name(session, user_id, name)
         if not account:
@@ -124,7 +158,7 @@ class AccountBalanceCRUD:
         session: AsyncSession, account_id: int, currency: str, amount: Decimal
     ) -> AccountBalance:
         balance = await AccountBalanceCRUD.get_balance(session, account_id, currency)
-        
+
         if balance:
             balance.balance = amount
             balance.updated_at = func.now()
@@ -133,7 +167,7 @@ class AccountBalanceCRUD:
                 account_id=account_id, currency=currency, balance=amount
             )
             session.add(balance)
-        
+
         await session.commit()
         await session.refresh(balance)
         return balance
@@ -143,7 +177,7 @@ class AccountBalanceCRUD:
         session: AsyncSession, account_id: int, currency: str, amount: Decimal
     ) -> AccountBalance:
         balance = await AccountBalanceCRUD.get_balance(session, account_id, currency)
-        
+
         if balance:
             balance.balance += amount
             balance.updated_at = func.now()
@@ -152,7 +186,7 @@ class AccountBalanceCRUD:
                 account_id=account_id, currency=currency, balance=amount
             )
             session.add(balance)
-        
+
         await session.commit()
         await session.refresh(balance)
         return balance
@@ -199,21 +233,27 @@ class TransactionCRUD:
         start_date: datetime,
         end_date: datetime,
         account_id: Optional[int] = None,
+        limit: Optional[int] = 10,
+        offset: Optional[int] = 0,
     ) -> List[Transaction]:
         query = (
             select(Transaction)
-            .where(and_(
-                Transaction.user_id == user_id,
-                Transaction.date >= start_date, 
-                Transaction.date <= end_date
-            ))
+            .where(
+                and_(
+                    Transaction.user_id == user_id,
+                    Transaction.date >= start_date,
+                    Transaction.date <= end_date,
+                )
+            )
             .options(
                 selectinload(Transaction.account_from),
                 selectinload(Transaction.account_to),
             )
             .order_by(desc(Transaction.date))
+            .limit(limit)
+            .offset(offset)
         )
-        
+
         if account_id:
             query = query.where(
                 or_(
@@ -221,7 +261,7 @@ class TransactionCRUD:
                     Transaction.account_to_id == account_id,
                 )
             )
-        
+
         result = await session.execute(query)
         return result.scalars().all()
 
@@ -235,11 +275,13 @@ class TransactionCRUD:
     ) -> Optional[Transaction]:
         query = (
             select(Transaction)
-            .where(and_(
-                Transaction.user_id == user_id,
-                Transaction.date >= start_date, 
-                Transaction.date <= end_date
-            ))
+            .where(
+                and_(
+                    Transaction.user_id == user_id,
+                    Transaction.date >= start_date,
+                    Transaction.date <= end_date,
+                )
+            )
             .options(
                 selectinload(Transaction.account_from),
                 selectinload(Transaction.account_to),
@@ -247,10 +289,10 @@ class TransactionCRUD:
             .order_by(desc(Transaction.amount))
             .limit(1)
         )
-        
+
         if transaction_type:
             query = query.where(Transaction.type == transaction_type)
-        
+
         result = await session.execute(query)
         return result.scalar_one_or_none()
 
@@ -263,21 +305,18 @@ class TransactionCRUD:
         transaction_type: TransactionType,
         currency: Optional[str] = None,
     ) -> Decimal:
-        query = (
-            select(func.sum(Transaction.amount))
-            .where(
-                and_(
-                    Transaction.user_id == user_id,
-                    Transaction.date >= start_date,
-                    Transaction.date <= end_date,
-                    Transaction.type == transaction_type,
-                )
+        query = select(func.sum(Transaction.amount)).where(
+            and_(
+                Transaction.user_id == user_id,
+                Transaction.date >= start_date,
+                Transaction.date <= end_date,
+                Transaction.type == transaction_type,
             )
         )
-        
+
         if currency:
             query = query.where(Transaction.currency == currency)
-        
+
         result = await session.execute(query)
         total = result.scalar()
         return total or Decimal("0")
@@ -363,10 +402,10 @@ class PendingTransactionCRUD:
             )
             .order_by(PendingTransaction.created_at)
         )
-        
+
         if user_id:
             query = query.where(PendingTransaction.user_id == user_id)
-        
+
         result = await session.execute(query)
         return result.scalars().all()
 

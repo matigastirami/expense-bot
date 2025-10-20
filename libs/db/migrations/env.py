@@ -5,9 +5,9 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from src.config import settings
-from src.db.base import Base
-from src.db import models  # Import models to register with Base
+from libs.db.config import settings
+from libs.db.base import Base
+from libs.db import models  # Import models to register with Base
 
 config = context.config
 
