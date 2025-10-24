@@ -38,7 +38,8 @@ test-bot:
 
 # Development servers
 dev-api:
-	PYTHONPATH=. FLASK_APP=packages/api/src/app.py flask run --debug
+	@echo "Starting Expense Tracker API..."
+	PYTHONPATH=. python packages/api/run.py
 
 dev-bot:
 	cd packages/telegram-bot && python -m src.app
@@ -55,7 +56,12 @@ docker-down:
 
 # Migrations
 migrate:
-	cd libs/database && alembic upgrade head
+	cd libs/db && alembic upgrade head
 
 migration-create:
-	cd libs/database && alembic revision --autogenerate -m "$(msg)"
+	cd libs/db && alembic revision --autogenerate -m "$(msg)"
+
+# Testing
+test-api-endpoints:
+	@echo "Running API endpoint tests..."
+	cd packages/api && python test_api.py
