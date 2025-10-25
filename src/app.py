@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from src.telegram.bot import start_bot
+from packages.telegram.bot import start_bot
 
 
 async def main() -> None:
@@ -10,10 +10,10 @@ async def main() -> None:
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    
+
     logger = logging.getLogger(__name__)
     logger.info("Starting Finance Agent...")
-    
+
     try:
         await start_bot()
     except KeyboardInterrupt:

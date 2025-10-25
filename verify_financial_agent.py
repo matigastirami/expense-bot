@@ -20,7 +20,7 @@ async def test_financial_agent():
     print("🧪 Testing Financial Analysis Agent Core...")
 
     try:
-        from src.agent.financial_agent import FinancialAnalysisAgent
+        from packages.agent.financial_agent import FinancialAnalysisAgent
         agent = FinancialAnalysisAgent()
 
         # Test expense classification
@@ -56,7 +56,7 @@ async def test_bot_handlers():
     print("🤖 Testing Telegram Bot Handlers...")
 
     try:
-        from src.telegram.financial_agent_handlers import cmd_analyze, cmd_expense, cmd_budget
+        from packages.telegram.financial_agent_handlers import cmd_analyze, cmd_expense, cmd_budget
 
         # Create mock message and state
         mock_message = Mock()
@@ -93,11 +93,11 @@ async def test_bot_integration():
 
     try:
         # Test that the bot imports correctly
-        from src.telegram.bot import dp, setup_bot_commands
+        from packages.telegram.bot import dp, setup_bot_commands
         print("✅ Bot imports successfully")
 
         # Test that financial router is imported
-        from src.telegram.financial_agent_handlers import financial_router
+        from packages.telegram.financial_agent_handlers import financial_router
         print("✅ Financial router imports successfully")
 
         # Test that commands are in the command list
@@ -129,7 +129,7 @@ async def test_multilingual_support():
     print("🌍 Testing Multilingual Support...")
 
     try:
-        from src.agent.financial_agent import FinancialAnalysisAgent
+        from packages.agent.financial_agent import FinancialAnalysisAgent
         agent = FinancialAnalysisAgent()
 
         # Test English

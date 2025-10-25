@@ -1,36 +1,110 @@
+version: "3.8"
+
 services:
+  # PostgreSQL Database
   postgres:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: expense-tracker-db-dev
     environment:
-      POSTGRES_DB: finance
-      POSTGRES_USER: finance
-      POSTGRES_PASSWORD: finance
+      POSTGRES_DB: ${POSTGRES_DB:-finance}
+      POSTGRES_USER: ${POSTGRES_USER:-finance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finance}
     ports:
-      - "5433:5432"
+      - "5433:5432" # Different port for dev to avoid conflicts
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./migrations:/migrations # Mount migrations for easy access
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U finance -d finance"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-finance} -d ${POSTGRES_DB:-finance}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - expense-tracker-dev
 
-  app:
-    build: .
+  # REST API Service (Development)
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    container_name: expense-tracker-api-dev
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      POSTGRES_DB: finance
-      POSTGRES_USER: finance
-      POSTGRES_PASSWORD: finance
-    env_file:
-      - .env
+      POSTGRES_DB: ${POSTGRES_DB:-finance}
+      POSTGRES_USER: ${POSTGRES_USER:-finance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finance}
+      API_HOST: 0.0.0.0
+      API_PORT: 5000
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      FX_PRIMARY: ${FX_PRIMARY:-coingecko}
+      ARS_SOURCE: ${ARS_SOURCE:-blue}
+    ports:
+      - "8000:5000"
     volumes:
+      # Mount source code for hot reload
+      - ./libs:/app/libs
+      - ./packages/api:/app/packages/api
+    networks:
+      - expense-tracker-dev
+
+  # Telegram Bot Service (Development)
+  bot:
+    build:
+      context: .
+      dockerfile: packages/telegram/Dockerfile
+    container_name: expense-tracker-bot-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-finance}
+      POSTGRES_USER: ${POSTGRES_USER:-finance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finance}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      FX_PRIMARY: ${FX_PRIMARY:-coingecko}
+      ARS_SOURCE: ${ARS_SOURCE:-blue}
+    volumes:
+      # Mount source code for development
+      - ./libs:/app/libs
+      - ./packages/agent:/app/packages/agent
+      - ./packages/telegram:/app/packages/telegram
       - ./src:/app/src
-    command: python -m src.app
+    networks:
+      - expense-tracker-dev
+
+  # Web Frontend (Development)
+  web:
+    build:
+      context: packages/web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+        VITE_TELEGRAM_BOT_NAME: ${TELEGRAM_BOT_NAME:-mati_claude_expense_bot}
+    container_name: expense-tracker-web-dev
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+    networks:
+      - expense-tracker-dev
 
 volumes:
-  postgres_data:
+  postgres_data_dev:
+    driver: local
+
+networks:
+  expense-tracker-dev:
+    driver: bridge

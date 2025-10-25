@@ -1,0 +1,25 @@
+{
+  "include": [
+    "src",
+    "libs",
+    "packages",
+    "tests"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "venv"
+  ],
+  "extraPaths": [
+    ".",
+    "src",
+    "libs"
+  ],
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Darwin",
+  "typeCheckingMode": "basic",
+  "useLibraryCodeForTypes": true,
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false
+}
