@@ -10,7 +10,10 @@ from libs.db.models import (
     Account,
     AccountBalance,
     AccountType,
+    Category,
+    CategoryType,
     ExchangeRate,
+    Merchant,
     PendingTransaction,
     Transaction,
     TransactionType,
@@ -203,22 +206,28 @@ class TransactionCRUD:
         date: datetime,
         account_from_id: Optional[int] = None,
         account_to_id: Optional[int] = None,
+        category_id: Optional[int] = None,
+        merchant_id: Optional[int] = None,
         currency_to: Optional[str] = None,
         amount_to: Optional[Decimal] = None,
         exchange_rate: Optional[Decimal] = None,
         description: Optional[str] = None,
+        is_necessary: Optional[bool] = None,
     ) -> Transaction:
         transaction = Transaction(
             user_id=user_id,
             type=transaction_type,
             account_from_id=account_from_id,
             account_to_id=account_to_id,
+            category_id=category_id,
+            merchant_id=merchant_id,
             currency=currency,
             amount=amount,
             currency_to=currency_to,
             amount_to=amount_to,
             exchange_rate=exchange_rate,
             description=description,
+            is_necessary=is_necessary,
             date=date,
         )
         session.add(transaction)
@@ -248,6 +257,8 @@ class TransactionCRUD:
             .options(
                 selectinload(Transaction.account_from),
                 selectinload(Transaction.account_to),
+                selectinload(Transaction.category),
+                selectinload(Transaction.merchant),
             )
             .order_by(desc(Transaction.date))
             .limit(limit)
@@ -363,10 +374,13 @@ class PendingTransactionCRUD:
         date: datetime,
         account_from_id: Optional[int] = None,
         account_to_id: Optional[int] = None,
+        category_id: Optional[int] = None,
+        merchant_id: Optional[int] = None,
         currency_to: Optional[str] = None,
         amount_to: Optional[Decimal] = None,
         exchange_rate: Optional[Decimal] = None,
         description: Optional[str] = None,
+        is_necessary: Optional[bool] = None,
         last_error: Optional[str] = None,
     ) -> PendingTransaction:
         pending_tx = PendingTransaction(
@@ -374,12 +388,15 @@ class PendingTransactionCRUD:
             transaction_type=transaction_type,
             account_from_id=account_from_id,
             account_to_id=account_to_id,
+            category_id=category_id,
+            merchant_id=merchant_id,
             currency=currency,
             amount=amount,
             currency_to=currency_to,
             amount_to=amount_to,
             exchange_rate=exchange_rate,
             description=description,
+            is_necessary=is_necessary,
             date=date,
             retry_count=0,
             last_error=last_error,
@@ -436,3 +453,150 @@ class PendingTransactionCRUD:
         if pending_tx:
             await session.delete(pending_tx)
             await session.commit()
+
+
+class CategoryCRUD:
+    @staticmethod
+    async def get_all(session: AsyncSession, user_id: int) -> List[Category]:
+        result = await session.execute(
+            select(Category)
+            .where(Category.user_id == user_id)
+            .order_by(Category.type, Category.name)
+        )
+        return result.scalars().all()
+
+    @staticmethod
+    async def get_by_id(
+        session: AsyncSession, user_id: int, category_id: int
+    ) -> Optional[Category]:
+        result = await session.execute(
+            select(Category).where(
+                and_(Category.id == category_id, Category.user_id == user_id)
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_by_name(
+        session: AsyncSession, user_id: int, name: str
+    ) -> Optional[Category]:
+        result = await session.execute(
+            select(Category).where(
+                and_(Category.user_id == user_id, Category.name == name)
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def create(
+        session: AsyncSession, user_id: int, name: str, category_type: CategoryType
+    ) -> Category:
+        category = Category(
+            user_id=user_id,
+            name=name,
+            type=category_type.value if isinstance(category_type, CategoryType) else category_type
+        )
+        session.add(category)
+        await session.commit()
+        await session.refresh(category)
+        return category
+
+    @staticmethod
+    async def update(
+        session: AsyncSession,
+        category_id: int,
+        user_id: int,
+        name: Optional[str] = None,
+        category_type: Optional[CategoryType] = None,
+    ) -> Optional[Category]:
+        category = await CategoryCRUD.get_by_id(session, user_id, category_id)
+        if not category:
+            return None
+
+        if name is not None:
+            category.name = name
+        if category_type is not None:
+            category.type = category_type.value if isinstance(category_type, CategoryType) else category_type
+
+        await session.commit()
+        await session.refresh(category)
+        return category
+
+    @staticmethod
+    async def delete(session: AsyncSession, category_id: int, user_id: int) -> bool:
+        category = await CategoryCRUD.get_by_id(session, user_id, category_id)
+        if not category:
+            return False
+
+        await session.delete(category)
+        await session.commit()
+        return True
+
+
+class MerchantCRUD:
+    @staticmethod
+    async def get_all(session: AsyncSession, user_id: int) -> List[Merchant]:
+        result = await session.execute(
+            select(Merchant)
+            .where(Merchant.user_id == user_id)
+            .order_by(Merchant.name)
+        )
+        return result.scalars().all()
+
+    @staticmethod
+    async def get_by_id(
+        session: AsyncSession, user_id: int, merchant_id: int
+    ) -> Optional[Merchant]:
+        result = await session.execute(
+            select(Merchant).where(
+                and_(Merchant.id == merchant_id, Merchant.user_id == user_id)
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_by_name(
+        session: AsyncSession, user_id: int, name: str
+    ) -> Optional[Merchant]:
+        result = await session.execute(
+            select(Merchant).where(
+                and_(Merchant.user_id == user_id, Merchant.name == name)
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def create(
+        session: AsyncSession, user_id: int, name: str
+    ) -> Merchant:
+        merchant = Merchant(user_id=user_id, name=name)
+        session.add(merchant)
+        await session.commit()
+        await session.refresh(merchant)
+        return merchant
+
+    @staticmethod
+    async def update(
+        session: AsyncSession,
+        merchant_id: int,
+        user_id: int,
+        name: str,
+    ) -> Optional[Merchant]:
+        merchant = await MerchantCRUD.get_by_id(session, user_id, merchant_id)
+        if not merchant:
+            return None
+
+        merchant.name = name
+        await session.commit()
+        await session.refresh(merchant)
+        return merchant
+
+    @staticmethod
+    async def delete(session: AsyncSession, merchant_id: int, user_id: int) -> bool:
+        merchant = await MerchantCRUD.get_by_id(session, user_id, merchant_id)
+        if not merchant:
+            return False
+
+        await session.delete(merchant)
+        await session.commit()
+        return True

@@ -9,19 +9,19 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from aiogram.utils.markdown import hbold
 
-from src.agent.agent import FinanceAgent
-from src.agent.tools.db_tool import QueryBalancesInput, QueryMonthlyReportInput
-from src.telegram.states import TransactionStates, SettingsStates
-from src.telegram.keyboards import (
+from packages.agent.agent import FinanceAgent
+from packages.agent.tools.db_tool import QueryBalancesInput, QueryMonthlyReportInput
+from packages.telegram.states import TransactionStates, SettingsStates
+from packages.telegram.keyboards import (
     build_main_settings_keyboard,
     build_balance_settings_keyboard,
     build_confirmation_keyboard,
     build_account_settings_keyboard
 )
-from src.config import settings
-from src.db.base import async_session_maker
-from src.db.crud import UserCRUD, AccountCRUD
-from src.db.models import BalanceTrackingMode, User
+from libs.config import settings
+from libs.db.base import async_session_maker
+from libs.db.crud import UserCRUD, AccountCRUD
+from libs.db.models import BalanceTrackingMode, User
 from sqlalchemy import select, update
 
 # Configure logging
@@ -739,7 +739,7 @@ async def noop_callback(callback: CallbackQuery) -> None:
 
 # Register Financial Analysis Agent router FIRST (higher priority)
 try:
-    from src.telegram.financial_agent_handlers import financial_router
+    from packages.telegram.financial_agent_handlers import financial_router
     dp.include_router(financial_router)
     logger.info("✅ Financial Analysis Agent handlers registered")
 except ImportError as e:

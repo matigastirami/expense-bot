@@ -17,10 +17,10 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Tuple, Any, TypedDict
 from dataclasses import dataclass
 
-from src.utils.language import detect_language, LanguageCode
-from src.db.base import async_session_maker
-from src.db.crud import TransactionCRUD, UserCRUD, AccountCRUD
-from src.db.models import TransactionType
+from libs.utils.language import detect_language, LanguageCode
+from libs.db.base import async_session_maker
+from libs.db.crud import TransactionCRUD, UserCRUD, AccountCRUD
+from libs.db.models import TransactionType
 
 
 class ExpenseConfirmation(TypedDict):

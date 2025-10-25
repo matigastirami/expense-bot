@@ -41,6 +41,11 @@ class BalanceTrackingMode(str, Enum):
     LOGGING = "logging"
 
 
+class CategoryType(str, Enum):
+    INCOME = "income"
+    EXPENSE = "expense"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -77,6 +82,12 @@ class User(Base):
     )
     pending_transactions: Mapped[list["PendingTransaction"]] = relationship(
         "PendingTransaction", back_populates="user", cascade="all, delete-orphan"
+    )
+    categories: Mapped[list["Category"]] = relationship(
+        "Category", back_populates="user", cascade="all, delete-orphan"
+    )
+    merchants: Mapped[list["Merchant"]] = relationship(
+        "Merchant", back_populates="user", cascade="all, delete-orphan"
     )
 
     __table_args__ = (Index("ix_users_telegram_user_id", "telegram_user_id"),)
@@ -160,6 +171,12 @@ class Transaction(Base):
     account_to_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("accounts.id"), nullable=True
     )
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("categories.id"), nullable=True
+    )
+    merchant_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("merchants.id"), nullable=True
+    )
     currency: Mapped[str] = mapped_column(String(10), nullable=False)
     amount: Mapped[Decimal] = mapped_column(
         Numeric(precision=20, scale=8), nullable=False
@@ -172,6 +189,7 @@ class Transaction(Base):
         Numeric(precision=20, scale=8), nullable=True
     )
     description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    is_necessary: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -184,6 +202,8 @@ class Transaction(Base):
     account_to: Mapped[Optional["Account"]] = relationship(
         "Account", foreign_keys=[account_to_id]
     )
+    category: Mapped[Optional["Category"]] = relationship("Category", foreign_keys=[category_id])
+    merchant: Mapped[Optional["Merchant"]] = relationship("Merchant", foreign_keys=[merchant_id])
 
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_amount_positive"),
@@ -196,6 +216,8 @@ class Transaction(Base):
         Index("ix_transactions_user_id", "user_id"),
         Index("ix_transactions_date", "date"),
         Index("ix_transactions_type", "type"),
+        Index("ix_transactions_category_id", "category_id"),
+        Index("ix_transactions_merchant_id", "merchant_id"),
     )
 
 
@@ -243,6 +265,12 @@ class PendingTransaction(Base):
     account_to_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("accounts.id"), nullable=True
     )
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("categories.id"), nullable=True
+    )
+    merchant_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("merchants.id"), nullable=True
+    )
     currency: Mapped[str] = mapped_column(String(10), nullable=False)
     amount: Mapped[Decimal] = mapped_column(
         Numeric(precision=20, scale=8), nullable=False
@@ -255,6 +283,7 @@ class PendingTransaction(Base):
         Numeric(precision=20, scale=8), nullable=True
     )
     description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    is_necessary: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -272,6 +301,8 @@ class PendingTransaction(Base):
     account_to: Mapped[Optional["Account"]] = relationship(
         "Account", foreign_keys=[account_to_id]
     )
+    category: Mapped[Optional["Category"]] = relationship("Category", foreign_keys=[category_id])
+    merchant: Mapped[Optional["Merchant"]] = relationship("Merchant", foreign_keys=[merchant_id])
 
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_pending_amount_positive"),
@@ -282,4 +313,47 @@ class PendingTransaction(Base):
         Index("ix_pending_transactions_user_id", "user_id"),
         Index("ix_pending_transactions_created_at", "created_at"),
         Index("ix_pending_transactions_retry_count", "retry_count"),
+        Index("ix_pending_transactions_category_id", "category_id"),
+        Index("ix_pending_transactions_merchant_id", "merchant_id"),
+    )
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    type: Mapped[str] = mapped_column(String(10), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="categories")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_user_category_name"),
+        Index("ix_categories_user_id", "user_id"),
+    )
+
+
+class Merchant(Base):
+    __tablename__ = "merchants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="merchants")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_user_merchant_name"),
+        Index("ix_merchants_user_id", "user_id"),
     )

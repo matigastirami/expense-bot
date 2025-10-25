@@ -1,139 +1,153 @@
 #!/bin/bash
 set -e
 
-# This script runs on the DigitalOcean droplet to deploy the app
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-echo "🚀 Starting deployment..."
+echo -e "${GREEN}================================${NC}"
+echo -e "${GREEN}Expense Tracker - Production Deploy${NC}"
+echo -e "${GREEN}================================${NC}"
+echo ""
 
-# Navigate to application directory
-cd /root/expense-tracker-claude
+# Check if .env file exists
+if [ ! -f .env ]; then
+    echo -e "${RED}Error: .env file not found!${NC}"
+    echo "Please create a .env file with your production configuration."
+    echo "You can copy .env.example and modify it: cp .env.example .env"
+    exit 1
+fi
 
-# Export environment variables explicitly
-export DOCKER_IMAGE="${DOCKER_IMAGE}"
-export POSTGRES_HOST="${POSTGRES_HOST}"
-export POSTGRES_PORT="${POSTGRES_PORT}"
-export POSTGRES_DB="${POSTGRES_DB}"
-export POSTGRES_USER="${POSTGRES_USER}"
-export POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
-export TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN}"
-export OPENAI_API_KEY="${OPENAI_API_KEY}"
+# Load environment variables
+export $(cat .env | grep -v '^#' | xargs)
 
-# Create .env file with environment variables as backup
-cat > .env << EOF
-DOCKER_IMAGE=${DOCKER_IMAGE}
-POSTGRES_HOST=${POSTGRES_HOST}
-POSTGRES_PORT=${POSTGRES_PORT}
-POSTGRES_DB=${POSTGRES_DB}
-POSTGRES_USER=${POSTGRES_USER}
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-OPENAI_API_KEY=${OPENAI_API_KEY}
-FX_PRIMARY=coingecko
-ARS_SOURCE=blue
-EOF
+# Check required environment variables
+required_vars=(
+    "POSTGRES_HOST"
+    "POSTGRES_DB"
+    "POSTGRES_USER"
+    "POSTGRES_PASSWORD"
+    "TELEGRAM_BOT_TOKEN"
+    "OPENAI_API_KEY"
+    "JWT_SECRET"
+)
 
-echo "✅ Environment variables exported and .env file created"
+echo -e "${YELLOW}Checking required environment variables...${NC}"
+missing_vars=()
+for var in "${required_vars[@]}"; do
+    if [ -z "${!var}" ]; then
+        missing_vars+=("$var")
+    fi
+done
 
-# Debug: Show that variables are set
-echo "🔍 Verifying environment variables:"
-echo "   DOCKER_IMAGE: ${DOCKER_IMAGE:0:50}..."
-echo "   POSTGRES_HOST: ${POSTGRES_HOST}"
-echo "   TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:0:10}..."
+if [ ${#missing_vars[@]} -ne 0 ]; then
+    echo -e "${RED}Error: Missing required environment variables:${NC}"
+    for var in "${missing_vars[@]}"; do
+        echo -e "  - $var"
+    done
+    exit 1
+fi
+echo -e "${GREEN}✓ All required environment variables present${NC}"
+echo ""
 
-# Check if Docker is installed and running
-echo "🔍 Checking Docker installation..."
-if ! command -v docker >/dev/null 2>&1; then
-    echo "❌ Docker not found. Installing Docker..."
+# Pull latest code
+echo -e "${YELLOW}Pulling latest code from git...${NC}"
+git pull origin $(git branch --show-current) || {
+    echo -e "${RED}Warning: Git pull failed. Continuing with current code...${NC}"
+}
+echo ""
 
-    # Install Docker
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sudo sh get-docker.sh
-    usermod -aG docker root
-    rm get-docker.sh
+# Stop existing containers
+echo -e "${YELLOW}Stopping existing containers...${NC}"
+docker-compose -f docker-compose.prod.yml down || true
+echo -e "${GREEN}✓ Containers stopped${NC}"
+echo ""
 
-    # Start Docker service
-    sudo systemctl enable docker
-    sudo systemctl start docker
+# Build Docker images
+echo -e "${YELLOW}Building Docker images...${NC}"
+docker-compose -f docker-compose.prod.yml build --no-cache
+echo -e "${GREEN}✓ Docker images built${NC}"
+echo ""
 
-    echo "✅ Docker installed successfully"
+# Run database migrations
+echo -e "${YELLOW}Running database migrations...${NC}"
+echo "This will connect to your Supabase database and run pending migrations..."
+
+# Create a temporary container to run migrations
+docker run --rm \
+    -e POSTGRES_HOST="$POSTGRES_HOST" \
+    -e POSTGRES_PORT="${POSTGRES_PORT:-5432}" \
+    -e POSTGRES_DB="$POSTGRES_DB" \
+    -e POSTGRES_USER="$POSTGRES_USER" \
+    -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+    --entrypoint="" \
+    expense-tracker-api:latest \
+    sh -c "cd /app && alembic upgrade head"
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ Database migrations completed successfully${NC}"
 else
-    echo "✅ Docker is already installed"
+    echo -e "${RED}Error: Database migrations failed!${NC}"
+    echo "Please check your database connection settings and try again."
+    exit 1
 fi
+echo ""
 
-# Ensure Docker service is running
-if ! systemctl is-active --quiet docker; then
-    echo "🔄 Starting Docker service..."
-    systemctl start docker
-fi
+# Start containers
+echo -e "${YELLOW}Starting production containers...${NC}"
+docker-compose -f docker-compose.prod.yml up -d
+echo -e "${GREEN}✓ Containers started${NC}"
+echo ""
 
-# Wait for Docker to be ready
-echo "⏳ Waiting for Docker to be ready..."
-for i in {1..30}; do
-    # Try with sudo first since user might not be in docker group yet
-    if sudo docker info >/dev/null 2>&1; then
-        echo "✅ Docker is ready"
+# Wait for services to be healthy
+echo -e "${YELLOW}Waiting for services to be healthy...${NC}"
+sleep 10
+
+# Check container status
+echo -e "${YELLOW}Container status:${NC}"
+docker-compose -f docker-compose.prod.yml ps
+echo ""
+
+# Check health of API
+echo -e "${YELLOW}Checking API health...${NC}"
+max_attempts=30
+attempt=0
+api_healthy=false
+
+while [ $attempt -lt $max_attempts ]; do
+    if curl -f http://localhost:${API_PORT:-8000}/health > /dev/null 2>&1; then
+        api_healthy=true
         break
     fi
-    if [ $i -eq 30 ]; then
-        echo "❌ Docker failed to start after 30 attempts"
-        # Show docker service status for debugging
-        sudo systemctl status docker --no-pager || true
-        exit 1
-    fi
+    attempt=$((attempt + 1))
     sleep 2
 done
 
-# Since we might have just installed Docker, use sudo for docker commands
-# or refresh group membership
-if groups | grep -q docker; then
-    echo "✅ User is in docker group"
-    DOCKER_CMD="docker"
+if [ "$api_healthy" = true ]; then
+    echo -e "${GREEN}✓ API is healthy and responding${NC}"
 else
-    echo "⚠️  User not in docker group yet, using sudo"
-    DOCKER_CMD="sudo docker"
+    echo -e "${RED}Warning: API health check failed after 60 seconds${NC}"
+    echo "Check logs with: docker-compose -f docker-compose.prod.yml logs api"
 fi
+echo ""
 
-# Log in to GitHub Container Registry
-echo "${GITHUB_TOKEN}" | ${DOCKER_CMD} login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
-
-echo "✅ Logged in to container registry"
-
-# Check which docker compose command is available
-if command -v docker-compose >/dev/null 2>&1; then
-    DOCKER_COMPOSE="docker-compose"
-elif groups | grep -q docker; then
-    DOCKER_COMPOSE="docker compose"
-else
-    DOCKER_COMPOSE="sudo docker compose"
-fi
-
-echo "Using Docker Compose command: ${DOCKER_COMPOSE}"
-
-# Pull the new image
-${DOCKER_COMPOSE} pull
-
-echo "✅ Pulled new image"
-
-# Stop and remove old containers
-${DOCKER_COMPOSE} down || true
-
-# Start new containers
-${DOCKER_COMPOSE} up -d
-
-echo "✅ Started containers"
-
-# Wait for health check
-echo "⏳ Waiting for application to be healthy..."
-for i in {1..30}; do
-  if curl -f http://localhost:8000/health > /dev/null 2>&1; then
-    echo "✅ Application is healthy!"
-    break
-  fi
-  echo "   Waiting for application... ($i/30)"
-  sleep 10
-done
-
-# Cleanup old images
-${DOCKER_CMD} image prune -f
-
-echo "🎉 Deployment completed successfully!"
+# Display running services
+echo -e "${GREEN}================================${NC}"
+echo -e "${GREEN}Deployment Complete!${NC}"
+echo -e "${GREEN}================================${NC}"
+echo ""
+echo "Services running:"
+echo "  - API: http://localhost:${API_PORT:-8000}"
+echo "  - Web: http://localhost:${WEB_PORT:-3000}"
+echo "  - Telegram Bot: Running"
+echo ""
+echo "Useful commands:"
+echo "  - View logs: docker-compose -f docker-compose.prod.yml logs -f"
+echo "  - Check status: docker-compose -f docker-compose.prod.yml ps"
+echo "  - Stop services: docker-compose -f docker-compose.prod.yml down"
+echo "  - Restart services: docker-compose -f docker-compose.prod.yml restart"
+echo ""
+echo -e "${YELLOW}Note: Make sure to configure nginx/caddy as reverse proxy for your domain${NC}"
+echo ""

@@ -2,8 +2,8 @@ import pytest
 from datetime import datetime
 from decimal import Decimal
 
-from src.agent.agent import FinanceAgent
-from src.agent.schemas import TransactionIntent, QueryIntent
+from packages.agent.agent import FinanceAgent
+from packages.agent.schemas import TransactionIntent, QueryIntent
 
 
 @pytest.fixture
@@ -16,7 +16,7 @@ async def test_parse_income_transaction(agent):
     """Test parsing income transaction."""
     message = "I received 6k USD salary for August via Deel"
     intent = await agent._extract_transaction_intent(message)
-    
+
     assert intent is not None
     assert intent.intent == TransactionIntent.INCOME
     assert intent.amount == Decimal("6000")
@@ -30,7 +30,7 @@ async def test_parse_expense_transaction(agent):
     """Test parsing expense transaction."""
     message = "I spent 400k ARS from my Galicia account"
     intent = await agent._extract_transaction_intent(message)
-    
+
     assert intent is not None
     assert intent.intent == TransactionIntent.EXPENSE
     assert intent.amount == Decimal("400000")
@@ -43,7 +43,7 @@ async def test_parse_transfer_transaction(agent):
     """Test parsing transfer transaction."""
     message = "I transferred 1K USD to my Astropay account and received 992 USD"
     intent = await agent._extract_transaction_intent(message)
-    
+
     assert intent is not None
     assert intent.intent == TransactionIntent.TRANSFER
     assert intent.amount == Decimal("1000")
@@ -57,7 +57,7 @@ async def test_parse_conversion_transaction(agent):
     """Test parsing conversion transaction."""
     message = "I converted 10 USDT to ARS in Belo at 1350 ARS per USDT"
     intent = await agent._extract_transaction_intent(message)
-    
+
     assert intent is not None
     assert intent.intent == TransactionIntent.CONVERSION
     assert intent.amount == Decimal("10")
@@ -71,7 +71,7 @@ async def test_parse_balance_query(agent):
     """Test parsing balance query."""
     message = "What's my balance in Galicia?"
     intent = await agent._extract_query_intent(message)
-    
+
     assert intent is not None
     assert intent.intent == QueryIntent.BALANCE
     assert intent.account_name == "Galicia"
@@ -82,7 +82,7 @@ async def test_parse_all_accounts_query(agent):
     """Test parsing all accounts query."""
     message = "Show all my accounts and balances"
     intent = await agent._extract_query_intent(message)
-    
+
     assert intent is not None
     assert intent.intent == QueryIntent.ALL_ACCOUNTS
 
@@ -92,7 +92,7 @@ async def test_parse_expense_query(agent):
     """Test parsing expense query."""
     message = "How much did I spend in August?"
     intent = await agent._extract_query_intent(message)
-    
+
     assert intent is not None
     assert intent.intent == QueryIntent.EXPENSES
     # Date parsing is complex, just check that some date logic was attempted
@@ -103,7 +103,7 @@ async def test_parse_largest_purchase_query(agent):
     """Test parsing largest purchase query."""
     message = "What was my largest purchase in August?"
     intent = await agent._extract_query_intent(message)
-    
+
     assert intent is not None
     assert intent.intent == QueryIntent.LARGEST_PURCHASE
 
@@ -112,10 +112,10 @@ async def test_parse_largest_purchase_query(agent):
 async def test_non_financial_message_returns_none(agent):
     """Test that non-financial messages return None for both parsers."""
     message = "Hello, how are you today?"
-    
+
     transaction_intent = await agent._extract_transaction_intent(message)
     query_intent = await agent._extract_query_intent(message)
-    
+
     assert transaction_intent is None
     assert query_intent is None
 
@@ -145,10 +145,10 @@ async def test_complex_transaction_parsing(agent):
             "expected_currency": "ARS"
         }
     ]
-    
+
     for case in test_cases:
         intent = await agent._extract_transaction_intent(case["message"])
-        
+
         if intent:  # Some complex cases might not parse perfectly
             assert intent.intent == case["expected_type"]
             if "expected_amount" in case:

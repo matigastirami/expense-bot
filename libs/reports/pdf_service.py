@@ -12,7 +12,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.platypus.flowables import HRFlowable
 
-from src.agent.schemas import MonthlyReport, TransactionInfo, BalanceInfo
+from packages.agent.schemas import MonthlyReport, TransactionInfo, BalanceInfo
 
 
 class PDFReportService:

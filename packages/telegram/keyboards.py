@@ -3,7 +3,7 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from typing import List, Optional
 
-from src.db.models import BalanceTrackingMode
+from libs.db.models import BalanceTrackingMode
 
 
 def build_main_settings_keyboard(user_balance_mode: str) -> InlineKeyboardMarkup:

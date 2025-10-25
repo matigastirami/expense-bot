@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 import os
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from flask_jwt_extended import (
     JWTManager,
     create_access_token,
@@ -19,6 +20,23 @@ from libs.db.models import TransactionType
 
 
 app = Flask(__name__)
+
+# CORS Configuration
+# Allow localhost and ngrok/tunnel domains for development
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            # Add your ngrok URL here for Telegram Login Widget testing
+            # Example: "https://abc123.ngrok.io"
+            "https://45ae773014be.ngrok-free.app",
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True,
+    }
+})
 
 # JWT Configuration
 app.config["JWT_SECRET_KEY"] = os.getenv(
@@ -132,6 +150,112 @@ async def signup():
         }), 201
 
 
+@app.route("/auth/telegram", methods=["POST"])
+async def telegram_auth():
+    """
+    Authenticate or register user via Telegram Login Widget.
+
+    Request body:
+        - id: Telegram user ID
+        - first_name: User's first name
+        - last_name: (Optional) User's last name
+        - username: (Optional) Telegram username
+        - photo_url: (Optional) Profile photo URL
+        - auth_date: Authentication timestamp
+        - hash: Security hash from Telegram
+
+    Returns:
+        - access_token: JWT token for authentication
+        - user: User information
+        - is_new_user: Boolean indicating if this is a new registration
+    """
+    import hashlib
+    import hmac
+
+    data = request.get_json()
+
+    # Extract Telegram data
+    telegram_id = str(data.get("id"))
+    first_name = data.get("first_name")
+    last_name = data.get("last_name")
+    username = data.get("username")
+    auth_date = data.get("auth_date")
+    hash_value = data.get("hash")
+
+    if not telegram_id or not first_name or not auth_date or not hash_value:
+        return jsonify({"error": "Missing required Telegram authentication data"}), 400
+
+    # Verify Telegram authentication (security check)
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not bot_token:
+        return jsonify({"error": "Telegram bot not configured"}), 500
+
+    # Create data check string
+    check_data = []
+    for key in sorted(data.keys()):
+        if key != "hash":
+            check_data.append(f"{key}={data[key]}")
+    data_check_string = "\n".join(check_data)
+
+    # Create secret key
+    secret_key = hashlib.sha256(bot_token.encode()).digest()
+
+    # Calculate hash
+    calculated_hash = hmac.new(
+        secret_key,
+        data_check_string.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    # Verify hash
+    if calculated_hash != hash_value:
+        return jsonify({"error": "Invalid Telegram authentication"}), 401
+
+    # Check if auth_date is recent (within 24 hours)
+    import time
+    current_time = int(time.time())
+    if current_time - int(auth_date) > 86400:  # 24 hours
+        return jsonify({"error": "Authentication data is too old"}), 401
+
+    async with async_session_maker() as session:
+        # Check if user exists
+        user = await UserService.get_user_by_telegram_id(session, telegram_id)
+        is_new_user = user is None
+
+        if not user:
+            # Create new user with Telegram data
+            from libs.db.crud import UserCRUD
+            user = await UserCRUD.create(
+                session=session,
+                telegram_user_id=telegram_id,
+                first_name=first_name,
+                last_name=last_name,
+                username=username,
+            )
+
+        # Generate access token
+        access_token = create_access_token(
+            identity=str(user.id),
+            additional_claims={
+                "telegram_id": user.telegram_user_id,
+                "email": user.email
+            }
+        )
+
+        return jsonify({
+            "access_token": access_token,
+            "user": {
+                "id": user.id,
+                "telegram_user_id": user.telegram_user_id,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "username": user.username,
+                "email": user.email,
+            },
+            "is_new_user": is_new_user
+        }), 200
+
+
 # ==================== Accounts ====================
 
 @app.route("/accounts", methods=["GET"])
@@ -227,6 +351,106 @@ async def create_account():
             "track_balance": account.track_balance,
             "created_at": account.created_at.isoformat(),
         }), 201
+
+
+@app.route("/accounts/<int:account_id>", methods=["PUT"])
+@jwt_required()
+async def update_account(account_id: int):
+    """
+    Update an existing account.
+
+    Path params:
+        - account_id: Account ID
+
+    Request body:
+        - name: Account name (optional)
+        - type: Account type (optional)
+        - track_balance: Whether to track balance (optional)
+
+    Returns:
+        - account: Updated account information
+    """
+    current_user_id = int(get_jwt_identity())
+    data = request.get_json()
+
+    async with async_session_maker() as session:
+        from sqlalchemy import select, update
+        from libs.db.models import Account
+
+        # Verify account exists and belongs to user
+        result = await session.execute(
+            select(Account).where(
+                Account.id == account_id,
+                Account.user_id == current_user_id
+            )
+        )
+        account = result.scalar_one_or_none()
+
+        if not account:
+            return jsonify({"error": "Account not found"}), 404
+
+        # Update fields if provided
+        update_data = {}
+        if "name" in data:
+            update_data["name"] = data["name"]
+        if "type" in data:
+            update_data["type"] = data["type"]
+        if "track_balance" in data:
+            update_data["track_balance"] = data["track_balance"]
+
+        if update_data:
+            await session.execute(
+                update(Account).where(Account.id == account_id).values(**update_data)
+            )
+            await session.commit()
+            await session.refresh(account)
+
+        return jsonify({
+            "id": account.id,
+            "name": account.name,
+            "type": account.type,
+            "track_balance": account.track_balance,
+            "created_at": account.created_at.isoformat(),
+        }), 200
+
+
+@app.route("/accounts/<int:account_id>", methods=["DELETE"])
+@jwt_required()
+async def delete_account(account_id: int):
+    """
+    Delete an account.
+
+    Path params:
+        - account_id: Account ID
+
+    Returns:
+        - message: Success message
+    """
+    current_user_id = int(get_jwt_identity())
+
+    async with async_session_maker() as session:
+        from sqlalchemy import select, delete
+        from libs.db.models import Account
+
+        # Verify account exists and belongs to user
+        result = await session.execute(
+            select(Account).where(
+                Account.id == account_id,
+                Account.user_id == current_user_id
+            )
+        )
+        account = result.scalar_one_or_none()
+
+        if not account:
+            return jsonify({"error": "Account not found"}), 404
+
+        # Delete the account
+        await session.execute(
+            delete(Account).where(Account.id == account_id)
+        )
+        await session.commit()
+
+        return jsonify({"message": "Account deleted successfully"}), 200
 
 
 @app.route("/accounts/balances", methods=["GET"])
@@ -411,15 +635,25 @@ async def create_transaction():
 @jwt_required()
 async def update_transaction(transaction_id: int):
     """
-    Update an existing transaction.
+    Update an existing transaction - all fields are editable.
 
     Path params:
         - transaction_id: Transaction ID
 
-    Request body:
-        - amount: New amount (optional)
-        - description: New description (optional)
-        - date: New date (optional)
+    Request body (all optional):
+        - amount: New amount
+        - description: New description
+        - date: New date (ISO format)
+        - type: New transaction type (income, expense, transfer, conversion)
+        - currency: New currency
+        - account_from: New source account name
+        - account_to: New destination account name
+        - category_id: New category ID
+        - merchant_id: New merchant ID
+        - is_necessary: New necessity flag (true/false)
+        - currency_to: New destination currency
+        - amount_to: New destination amount
+        - exchange_rate: New exchange rate
 
     Returns:
         - transaction: Updated transaction information
@@ -427,9 +661,20 @@ async def update_transaction(transaction_id: int):
     current_user_id = int(get_jwt_identity())
     data = request.get_json()
 
+    # Extract all possible fields
     amount = data.get("amount")
     description = data.get("description")
     date_str = data.get("date")
+    transaction_type = data.get("type")
+    currency = data.get("currency")
+    account_from = data.get("account_from")
+    account_to = data.get("account_to")
+    category_id = data.get("category_id")
+    merchant_id = data.get("merchant_id")
+    is_necessary = data.get("is_necessary")
+    currency_to = data.get("currency_to")
+    amount_to = data.get("amount_to")
+    exchange_rate = data.get("exchange_rate")
 
     # Parse date if provided
     date = None
@@ -447,21 +692,83 @@ async def update_transaction(transaction_id: int):
             amount=amount,
             description=description,
             date=date,
+            transaction_type=transaction_type,
+            currency=currency,
+            account_from=account_from,
+            account_to=account_to,
+            category_id=category_id,
+            merchant_id=merchant_id,
+            is_necessary=is_necessary,
+            currency_to=currency_to,
+            amount_to=amount_to,
+            exchange_rate=exchange_rate,
         )
 
         if error:
             status_code = 404 if "not found" in error.lower() else 400
             return jsonify({"error": error}), status_code
 
+        # Refresh relationships to include category and merchant
+        await session.refresh(transaction, ["category", "merchant", "account_from", "account_to"])
+
         return jsonify({
             "id": transaction.id,
             "type": transaction.type.value if hasattr(transaction.type, 'value') else str(transaction.type),
             "amount": float(transaction.amount),
             "currency": transaction.currency,
+            "account_from": transaction.account_from.name if transaction.account_from else None,
+            "account_to": transaction.account_to.name if transaction.account_to else None,
+            "category_id": transaction.category_id,
+            "category": transaction.category.name if transaction.category else None,
+            "merchant_id": transaction.merchant_id,
+            "merchant": transaction.merchant.name if transaction.merchant else None,
+            "is_necessary": transaction.is_necessary,
+            "currency_to": transaction.currency_to,
+            "amount_to": float(transaction.amount_to) if transaction.amount_to else None,
+            "exchange_rate": float(transaction.exchange_rate) if transaction.exchange_rate else None,
             "description": transaction.description,
             "date": transaction.date.isoformat(),
             "updated_at": transaction.created_at.isoformat(),
         }), 200
+
+
+@app.route("/transactions/<int:transaction_id>", methods=["DELETE"])
+@jwt_required()
+async def delete_transaction(transaction_id: int):
+    """
+    Delete a transaction.
+
+    Path params:
+        - transaction_id: Transaction ID
+
+    Returns:
+        - message: Success message
+    """
+    current_user_id = int(get_jwt_identity())
+
+    async with async_session_maker() as session:
+        from sqlalchemy import select, delete
+        from libs.db.models import Transaction
+
+        # Verify transaction exists and belongs to user
+        result = await session.execute(
+            select(Transaction).where(
+                Transaction.id == transaction_id,
+                Transaction.user_id == current_user_id
+            )
+        )
+        transaction = result.scalar_one_or_none()
+
+        if not transaction:
+            return jsonify({"error": "Transaction not found"}), 404
+
+        # Delete the transaction
+        await session.execute(
+            delete(Transaction).where(Transaction.id == transaction_id)
+        )
+        await session.commit()
+
+        return jsonify({"message": "Transaction deleted successfully"}), 200
 
 
 # ==================== Analytics ====================
@@ -539,60 +846,346 @@ async def get_analytics():
         }), 200
 
 
-# ==================== Categories & Merchants (Stub endpoints) ====================
+# ==================== Categories ====================
 
 @app.route("/categories", methods=["GET"])
 @jwt_required()
 async def list_categories():
     """
-    List expense categories.
+    List all categories for the authenticated user.
 
-    Note: This is a stub endpoint. Category management is not yet implemented.
+    Returns:
+        - categories: List of categories with id, name, type, and created_at
     """
-    return jsonify({
-        "categories": [],
-        "message": "Category management not yet implemented"
-    }), 200
+    current_user_id = int(get_jwt_identity())
+
+    async with async_session_maker() as session:
+        from libs.db.crud import CategoryCRUD
+
+        categories = await CategoryCRUD.get_all(session, current_user_id)
+
+        return jsonify({
+            "categories": [
+                {
+                    "id": category.id,
+                    "name": category.name,
+                    "type": category.type,
+                    "created_at": category.created_at.isoformat(),
+                }
+                for category in categories
+            ]
+        }), 200
 
 
 @app.route("/categories", methods=["POST"])
 @jwt_required()
 async def create_category():
     """
-    Create a new expense category.
+    Create a new category for the authenticated user.
 
-    Note: This is a stub endpoint. Category management is not yet implemented.
+    Request body:
+        - name: Category name (required)
+        - type: Category type (income or expense) (required)
+
+    Returns:
+        - id: Created category ID
+        - name: Category name
+        - type: Category type
+        - created_at: Creation timestamp
     """
-    return jsonify({
-        "error": "Category management not yet implemented"
-    }), 501
+    current_user_id = int(get_jwt_identity())
+    data = request.get_json()
 
+    name = data.get("name")
+    category_type = data.get("type")
+
+    if not name or not category_type:
+        return jsonify({"error": "name and type are required"}), 400
+
+    if category_type not in ["income", "expense"]:
+        return jsonify({"error": "type must be 'income' or 'expense'"}), 400
+
+    async with async_session_maker() as session:
+        from libs.db.crud import CategoryCRUD
+
+        # Check if category with same name already exists
+        existing = await CategoryCRUD.get_by_name(session, current_user_id, name)
+        if existing:
+            return jsonify({"error": "Category with this name already exists"}), 400
+
+        category = await CategoryCRUD.create(session, current_user_id, name, category_type)
+
+        return jsonify({
+            "id": category.id,
+            "name": category.name,
+            "type": category.type,
+            "created_at": category.created_at.isoformat(),
+        }), 201
+
+
+@app.route("/categories/<int:category_id>", methods=["PUT"])
+@jwt_required()
+async def update_category(category_id: int):
+    """
+    Update an existing category.
+
+    Path params:
+        - category_id: Category ID
+
+    Request body:
+        - name: New category name (optional)
+        - type: New category type (optional)
+
+    Returns:
+        - id: Category ID
+        - name: Category name
+        - type: Category type
+        - created_at: Creation timestamp
+    """
+    current_user_id = int(get_jwt_identity())
+    data = request.get_json()
+
+    name = data.get("name")
+    category_type = data.get("type")
+
+    if category_type and category_type not in ["income", "expense"]:
+        return jsonify({"error": "type must be 'income' or 'expense'"}), 400
+
+    async with async_session_maker() as session:
+        from libs.db.crud import CategoryCRUD
+
+        # Check if category with same name already exists (excluding current category)
+        if name:
+            existing = await CategoryCRUD.get_by_name(session, current_user_id, name)
+            if existing and existing.id != category_id:
+                return jsonify({"error": "Category with this name already exists"}), 400
+
+        category = await CategoryCRUD.update(
+            session, category_id, current_user_id, name, category_type
+        )
+
+        if not category:
+            return jsonify({"error": "Category not found"}), 404
+
+        return jsonify({
+            "id": category.id,
+            "name": category.name,
+            "type": category.type,
+            "created_at": category.created_at.isoformat(),
+        }), 200
+
+
+@app.route("/categories/<int:category_id>", methods=["DELETE"])
+@jwt_required()
+async def delete_category(category_id: int):
+    """
+    Delete a category.
+
+    Path params:
+        - category_id: Category ID
+
+    Returns:
+        - message: Success message
+    """
+    current_user_id = int(get_jwt_identity())
+
+    async with async_session_maker() as session:
+        from libs.db.crud import CategoryCRUD
+
+        deleted = await CategoryCRUD.delete(session, category_id, current_user_id)
+
+        if not deleted:
+            return jsonify({"error": "Category not found"}), 404
+
+        return jsonify({"message": "Category deleted successfully"}), 200
+
+
+# ==================== Merchants ====================
 
 @app.route("/merchants", methods=["GET"])
 @jwt_required()
 async def list_merchants():
     """
-    List merchants/shops.
+    List all merchants for the authenticated user.
 
-    Note: This is a stub endpoint. Merchant management is not yet implemented.
+    Returns:
+        - merchants: List of merchants with id, name, and created_at
     """
-    return jsonify({
-        "merchants": [],
-        "message": "Merchant management not yet implemented"
-    }), 200
+    current_user_id = int(get_jwt_identity())
+
+    async with async_session_maker() as session:
+        from libs.db.crud import MerchantCRUD
+
+        merchants = await MerchantCRUD.get_all(session, current_user_id)
+
+        return jsonify({
+            "merchants": [
+                {
+                    "id": merchant.id,
+                    "name": merchant.name,
+                    "created_at": merchant.created_at.isoformat(),
+                }
+                for merchant in merchants
+            ]
+        }), 200
 
 
 @app.route("/merchants", methods=["POST"])
 @jwt_required()
 async def create_merchant():
     """
-    Create a new merchant/shop.
+    Create a new merchant for the authenticated user.
 
-    Note: This is a stub endpoint. Merchant management is not yet implemented.
+    Request body:
+        - name: Merchant name (required)
+
+    Returns:
+        - id: Created merchant ID
+        - name: Merchant name
+        - created_at: Creation timestamp
     """
-    return jsonify({
-        "error": "Merchant management not yet implemented"
-    }), 501
+    current_user_id = int(get_jwt_identity())
+    data = request.get_json()
+
+    name = data.get("name")
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    async with async_session_maker() as session:
+        from libs.db.crud import MerchantCRUD
+
+        # Check if merchant with same name already exists
+        existing = await MerchantCRUD.get_by_name(session, current_user_id, name)
+        if existing:
+            return jsonify({"error": "Merchant with this name already exists"}), 400
+
+        merchant = await MerchantCRUD.create(session, current_user_id, name)
+
+        return jsonify({
+            "id": merchant.id,
+            "name": merchant.name,
+            "created_at": merchant.created_at.isoformat(),
+        }), 201
+
+
+@app.route("/merchants/<int:merchant_id>", methods=["PUT"])
+@jwt_required()
+async def update_merchant(merchant_id: int):
+    """
+    Update an existing merchant.
+
+    Path params:
+        - merchant_id: Merchant ID
+
+    Request body:
+        - name: New merchant name (required)
+
+    Returns:
+        - id: Merchant ID
+        - name: Merchant name
+        - created_at: Creation timestamp
+    """
+    current_user_id = int(get_jwt_identity())
+    data = request.get_json()
+
+    name = data.get("name")
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    async with async_session_maker() as session:
+        from libs.db.crud import MerchantCRUD
+
+        # Check if merchant with same name already exists (excluding current merchant)
+        existing = await MerchantCRUD.get_by_name(session, current_user_id, name)
+        if existing and existing.id != merchant_id:
+            return jsonify({"error": "Merchant with this name already exists"}), 400
+
+        merchant = await MerchantCRUD.update(
+            session, merchant_id, current_user_id, name
+        )
+
+        if not merchant:
+            return jsonify({"error": "Merchant not found"}), 404
+
+        return jsonify({
+            "id": merchant.id,
+            "name": merchant.name,
+            "created_at": merchant.created_at.isoformat(),
+        }), 200
+
+
+@app.route("/merchants/<int:merchant_id>", methods=["DELETE"])
+@jwt_required()
+async def delete_merchant(merchant_id: int):
+    """
+    Delete a merchant.
+
+    Path params:
+        - merchant_id: Merchant ID
+
+    Returns:
+        - message: Success message
+    """
+    current_user_id = int(get_jwt_identity())
+
+    async with async_session_maker() as session:
+        from libs.db.crud import MerchantCRUD
+
+        deleted = await MerchantCRUD.delete(session, merchant_id, current_user_id)
+
+        if not deleted:
+            return jsonify({"error": "Merchant not found"}), 404
+
+        return jsonify({"message": "Merchant deleted successfully"}), 200
+
+
+@app.route("/link-telegram", methods=["POST"])
+@jwt_required()
+async def link_telegram():
+    """
+    Link a Telegram account to the authenticated user.
+
+    Request body:
+        - telegram_user_id: Telegram user ID to link
+
+    Returns:
+        - message: Success message
+    """
+    current_user_id = int(get_jwt_identity())
+    data = request.get_json()
+    telegram_user_id = data.get("telegram_user_id")
+
+    if not telegram_user_id:
+        return jsonify({"error": "telegram_user_id is required"}), 400
+
+    async with async_session_maker() as session:
+        from sqlalchemy import select, update
+        from libs.db.models import User
+
+        # Check if telegram_user_id is already linked to another account
+        result = await session.execute(
+            select(User).where(User.telegram_user_id == telegram_user_id)
+        )
+        existing_user = result.scalar_one_or_none()
+
+        if existing_user and existing_user.id != current_user_id:
+            return jsonify({
+                "error": "This Telegram account is already linked to another user"
+            }), 400
+
+        # Link telegram account to current user
+        await session.execute(
+            update(User)
+            .where(User.id == current_user_id)
+            .values(telegram_user_id=telegram_user_id)
+        )
+        await session.commit()
+
+        return jsonify({
+            "message": "Telegram account linked successfully"
+        }), 200
 
 
 if __name__ == "__main__":

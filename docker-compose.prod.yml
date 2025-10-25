@@ -1,42 +1,141 @@
+version: "3.8"
+
 services:
-  app:
-    build: .
-    container_name: expense-tracker-bot
+  # REST API Service
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    container_name: expense-tracker-api
     restart: unless-stopped
     environment:
-      - POSTGRES_HOST=${POSTGRES_HOST}
-      - POSTGRES_PORT=${POSTGRES_PORT}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - FX_PRIMARY=coingecko
-      - ARS_SOURCE=blue
+      # Database (Supabase Cloud)
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # API
+      API_HOST: ${API_HOST:-0.0.0.0}
+      API_PORT: ${API_PORT:-8000}
+      JWT_SECRET: ${JWT_SECRET}
+      # Telegram
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      # OpenAI
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # FX
+      FX_PRIMARY: ${FX_PRIMARY:-coingecko}
+      ARS_SOURCE: ${ARS_SOURCE:-blue}
     ports:
-      - "8000:8000"
-    volumes:
-      - ./logs:/app/logs
-    dns:
-      - 2001:4860:4860::8888
-      - 2001:4860:4860::8844
-      - 8.8.8.8
-      - 8.8.4.4
+      - "${API_PORT:-8000}:5000"
     networks:
-      - app-network
+      - expense-tracker-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5000/health').read()",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 10s
+
+  # Telegram Bot Service
+  bot:
+    build:
+      context: .
+      dockerfile: packages/telegram/Dockerfile
+    container_name: expense-tracker-bot
+    restart: unless-stopped
+    environment:
+      # Database (Supabase Cloud)
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Telegram
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      # OpenAI
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # FX
+      FX_PRIMARY: ${FX_PRIMARY:-coingecko}
+      ARS_SOURCE: ${ARS_SOURCE:-blue}
+    networks:
+      - expense-tracker-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "from packages.telegram.bot import dp; print('OK')",
+        ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Web Frontend
+  web:
+    build:
+      context: packages/web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${API_BASE_URL:-http://localhost:8000}
+        VITE_TELEGRAM_BOT_NAME: ${TELEGRAM_BOT_NAME:-}
+    container_name: expense-tracker-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    networks:
+      - expense-tracker-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost/health",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # Finance Agent (standalone - optional)
+  # Uncomment to run agent in REPL mode
+  # agent:
+  #   build:
+  #     context: .
+  #     dockerfile: packages/agent/Dockerfile
+  #   container_name: expense-tracker-agent
+  #   restart: unless-stopped
+  #   environment:
+  #     # Database (Supabase Cloud)
+  #     POSTGRES_HOST: ${POSTGRES_HOST}
+  #     POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+  #     POSTGRES_DB: ${POSTGRES_DB}
+  #     POSTGRES_USER: ${POSTGRES_USER}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #     # OpenAI
+  #     OPENAI_API_KEY: ${OPENAI_API_KEY}
+  #     # FX
+  #     FX_PRIMARY: ${FX_PRIMARY:-coingecko}
+  #     ARS_SOURCE: ${ARS_SOURCE:-blue}
+  #   networks:
+  #     - expense-tracker-network
+  #   stdin_open: true
+  #   tty: true
 
 networks:
-  app-network:
-    enable_ipv6: true
+  expense-tracker-network:
     driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.20.0.0/16
-        - subnet: 2001:db8:1::/64

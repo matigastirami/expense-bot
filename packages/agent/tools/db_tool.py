@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from src.agent.schemas import BalanceInfo, MonthlyReport, TransactionInfo
-from src.db.base import async_session_maker
-from src.db.crud import AccountBalanceCRUD, AccountCRUD, ExchangeRateCRUD, PendingTransactionCRUD, TransactionCRUD
-from src.db.models import Account, AccountBalance, AccountType, BalanceTrackingMode, TransactionType, User
-from src.reports.pdf_service import PDFReportService
+from packages.agent.schemas import BalanceInfo, MonthlyReport, TransactionInfo
+from libs.db.base import async_session_maker
+from libs.db.crud import AccountBalanceCRUD, AccountCRUD, ExchangeRateCRUD, PendingTransactionCRUD, TransactionCRUD
+from libs.db.models import Account, AccountBalance, AccountType, BalanceTrackingMode, TransactionType, User
+from libs.reports.pdf_service import PDFReportService
 
 
 class RegisterTransactionInput(BaseModel):
@@ -526,7 +526,7 @@ class DbTool(BaseTool):
             return account_currency, transaction_amount, True
 
         # Need to convert from transaction_currency to account_currency
-        from src.agent.tools.fx_tool import FxTool
+        from packages.agent.tools.fx_tool import FxTool
         fx_tool = FxTool()
 
         # Get exchange rate

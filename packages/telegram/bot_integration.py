@@ -8,7 +8,7 @@ when imported. It provides seamless integration with the existing bot infrastruc
 import logging
 from aiogram import Dispatcher
 
-from src.telegram.financial_agent_handlers import financial_router
+from packages.telegram.financial_agent_handlers import financial_router
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ def register_financial_agent_handlers(dp: Dispatcher) -> None:
 # This ensures the handlers are registered when the bot starts
 try:
     # Import the main dispatcher from the bot module
-    from src.telegram.bot import dp
+    from packages.telegram.bot import dp
     register_financial_agent_handlers(dp)
 
 except ImportError:

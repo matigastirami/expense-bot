@@ -477,6 +477,11 @@ class TransactionService:
                 "currency": tx.currency,
                 "account_from": tx.account_from.name if tx.account_from else None,
                 "account_to": tx.account_to.name if tx.account_to else None,
+                "category_id": tx.category_id,
+                "category": tx.category.name if tx.category else None,
+                "merchant_id": tx.merchant_id,
+                "merchant": tx.merchant.name if tx.merchant else None,
+                "is_necessary": tx.is_necessary,
                 "currency_to": tx.currency_to,
                 "amount_to": float(tx.amount_to) if tx.amount_to else None,
                 "exchange_rate": float(tx.exchange_rate) if tx.exchange_rate else None,
@@ -525,9 +530,19 @@ class TransactionService:
         amount: Optional[float] = None,
         description: Optional[str] = None,
         date: Optional[datetime] = None,
+        transaction_type: Optional[str] = None,
+        currency: Optional[str] = None,
+        account_from: Optional[str] = None,
+        account_to: Optional[str] = None,
+        category_id: Optional[int] = None,
+        merchant_id: Optional[int] = None,
+        is_necessary: Optional[bool] = None,
+        currency_to: Optional[str] = None,
+        amount_to: Optional[float] = None,
+        exchange_rate: Optional[float] = None,
     ) -> tuple[Optional[Transaction], Optional[str]]:
         """
-        Update a transaction (limited fields).
+        Update a transaction - all fields are editable.
 
         Args:
             session: Database session
@@ -536,6 +551,16 @@ class TransactionService:
             amount: New amount (optional)
             description: New description (optional)
             date: New date (optional)
+            transaction_type: New transaction type (optional)
+            currency: New currency (optional)
+            account_from: New source account name (optional)
+            account_to: New destination account name (optional)
+            category_id: New category ID (optional)
+            merchant_id: New merchant ID (optional)
+            is_necessary: New necessity flag (optional)
+            currency_to: New destination currency (optional)
+            amount_to: New destination amount (optional)
+            exchange_rate: New exchange rate (optional)
 
         Returns:
             Tuple of (transaction, error_message)
@@ -545,24 +570,75 @@ class TransactionService:
         if not transaction:
             return None, "Transaction not found"
 
-        # Update fields
+        # Update amount
         if amount is not None:
-            is_valid, error = validate_transaction_data(
-                transaction_type=transaction.type.value,
-                amount=amount,
-                currency=transaction.currency,
-            )
-            if not is_valid:
-                return None, error
+            if amount <= 0:
+                return None, "Amount must be greater than 0"
             transaction.amount = Decimal(str(amount))
 
+        # Update description
         if description is not None:
             if len(description) > 500:
                 return None, "Description cannot exceed 500 characters"
             transaction.description = description
 
+        # Update date
         if date is not None:
             transaction.date = date
+
+        # Update transaction type
+        if transaction_type is not None:
+            try:
+                tx_type = TransactionType(transaction_type.lower())
+                transaction.type = tx_type
+            except ValueError:
+                return None, f"Invalid transaction type: {transaction_type}"
+
+        # Update currency
+        if currency is not None:
+            transaction.currency = currency
+
+        # Update account_from
+        if account_from is not None:
+            account_from_obj = await AccountService.get_or_create_account(
+                session, user_id, account_from
+            )
+            transaction.account_from_id = account_from_obj.id
+
+        # Update account_to
+        if account_to is not None:
+            account_to_obj = await AccountService.get_or_create_account(
+                session, user_id, account_to
+            )
+            transaction.account_to_id = account_to_obj.id
+
+        # Update category_id
+        if category_id is not None:
+            transaction.category_id = category_id
+
+        # Update merchant_id
+        if merchant_id is not None:
+            transaction.merchant_id = merchant_id
+
+        # Update is_necessary
+        if is_necessary is not None:
+            transaction.is_necessary = is_necessary
+
+        # Update currency_to
+        if currency_to is not None:
+            transaction.currency_to = currency_to
+
+        # Update amount_to
+        if amount_to is not None:
+            if amount_to <= 0:
+                return None, "Amount to must be greater than 0"
+            transaction.amount_to = Decimal(str(amount_to))
+
+        # Update exchange_rate
+        if exchange_rate is not None:
+            if exchange_rate <= 0:
+                return None, "Exchange rate must be greater than 0"
+            transaction.exchange_rate = Decimal(str(exchange_rate))
 
         await session.commit()
         await session.refresh(transaction)

@@ -24,12 +24,12 @@ from aiogram.types import (
 )
 from aiogram.utils.markdown import hbold, hcode
 
-from src.agent.financial_agent import FinancialAnalysisAgent
-from src.db.base import async_session_maker
-from src.db.crud import UserCRUD, TransactionCRUD, AccountCRUD
-from src.db.models import TransactionType, AccountType
-from src.utils.language import detect_language, Messages
-from src.telegram.states import TransactionStates
+from packages.agent.financial_agent import FinancialAnalysisAgent
+from libs.db.base import async_session_maker
+from libs.db.crud import UserCRUD, TransactionCRUD, AccountCRUD
+from libs.db.models import TransactionType, AccountType
+from libs.utils.language import detect_language, Messages
+from packages.telegram.states import TransactionStates
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ def cleanup_expired_confirmations():
 
 # Initialize audio transcription service
 try:
-    from src.services.audio_transcription import audio_service
+    from libs.services.audio_transcription import audio_service
 except ImportError:
     logger.warning("⚠️ Audio transcription service not available")
     audio_service = None
@@ -224,7 +224,7 @@ async def handle_voice_expense(message: Message, state: FSMContext):
             # Process the expense using the financial agent
             # Detect language from the actual transcription text (not user settings)
             # This handles cases where Whisper transcribes Spanish -> English
-            from src.utils.language import detect_language
+            from libs.utils.language import detect_language
             detected_lang = detect_language(transcription)
             expense_data["language"] = detected_lang
             confirmation = await financial_agent.process_expense_confirmation(

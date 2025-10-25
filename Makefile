@@ -42,17 +42,84 @@ dev-api:
 	PYTHONPATH=. python packages/api/run.py
 
 dev-bot:
-	cd packages/telegram-bot && python -m src.app
+	@echo "Starting Telegram Bot..."
+	./run_bot.sh
+
+dev-agent-cli:
+	@echo "Finance Agent CLI - Pass your query as an argument"
+	@echo "Example: make dev-agent-cli QUERY='How much did I spend this week?'"
+	PYTHONPATH=. python packages/agent/cli.py $(QUERY)
+
+dev-agent-repl:
+	@echo "Starting Finance Agent REPL..."
+	PYTHONPATH=. python packages/agent/repl.py
 
 dev-web:
 	cd packages/web && npm run dev
 
-# Docker
-docker-up:
-	docker-compose -f infrastructure/docker/docker-compose.yml up
+# Docker - Development
+docker-dev-build:
+	@echo "Building Docker images for development..."
+	docker-compose build
 
-docker-down:
-	docker-compose -f infrastructure/docker/docker-compose.yml down
+docker-dev-up:
+	@echo "Starting development environment with Docker..."
+	docker-compose up -d
+
+docker-dev-down:
+	@echo "Stopping development environment..."
+	docker-compose down
+
+docker-dev-logs:
+	docker-compose logs -f
+
+docker-dev-restart:
+	docker-compose restart
+
+# Docker - Production
+docker-prod-build:
+	@echo "Building Docker images for production..."
+	docker-compose -f docker-compose.prod.yml build
+
+docker-prod-up:
+	@echo "Starting production environment with Docker..."
+	docker-compose -f docker-compose.prod.yml up -d
+
+docker-prod-down:
+	@echo "Stopping production environment..."
+	docker-compose -f docker-compose.prod.yml down
+
+docker-prod-logs:
+	docker-compose -f docker-compose.prod.yml logs -f
+
+docker-prod-ps:
+	docker-compose -f docker-compose.prod.yml ps
+
+# Docker - Service-specific
+docker-build-api:
+	docker-compose build api
+
+docker-build-bot:
+	docker-compose build bot
+
+docker-build-agent:
+	docker-compose build agent
+
+# Docker - Cleanup
+docker-clean:
+	@echo "Removing all containers, images, and volumes..."
+	docker-compose down -v
+	docker system prune -af
+
+# Docker - Database
+docker-db-backup:
+	@echo "Creating database backup..."
+	docker-compose exec postgres pg_dump -U finance finance > backup_$$(date +%Y%m%d_%H%M%S).sql
+
+docker-db-restore:
+	@echo "Restoring database from backup..."
+	@read -p "Enter backup file path: " backup_file; \
+	docker-compose exec -T postgres psql -U finance finance < $$backup_file
 
 # Migrations
 migrate:

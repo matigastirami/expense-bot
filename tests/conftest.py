@@ -5,8 +5,8 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.db.base import Base
-from src.db.models import Account, AccountType, AccountBalance, Transaction, TransactionType
+from libs.db.base import Base
+from libs.db.models import Account, AccountType, AccountBalance, Transaction, TransactionType
 
 
 @pytest.fixture(scope="session")
@@ -22,17 +22,17 @@ async def async_session():
     """Create a test database session."""
     # Use in-memory SQLite for tests
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     async_session_maker = sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
-    
+
     async with async_session_maker() as session:
         yield session
-    
+
     await engine.dispose()
 
 
@@ -52,7 +52,7 @@ async def sample_account_with_balance(async_session):
     account = Account(name="Test Account", type=AccountType.BANK)
     async_session.add(account)
     await async_session.flush()
-    
+
     balance = AccountBalance(
         account_id=account.id,
         currency="USD",

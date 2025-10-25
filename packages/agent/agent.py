@@ -5,8 +5,8 @@ from typing import List, Optional
 import dateparser
 from langchain_openai import ChatOpenAI
 
-from src.agent.llm import get_llm
-from src.agent.schemas import (
+from packages.agent.llm import get_llm
+from packages.agent.schemas import (
     BalanceInfo,
     MonthlyReport,
     ParsedQueryIntent,
@@ -14,18 +14,18 @@ from src.agent.schemas import (
     QueryIntent,
     TransactionIntent,
 )
-from src.db.models import TransactionType
-from src.agent.tools.db_tool import (
+from libs.db.models import TransactionType
+from packages.agent.tools.db_tool import (
     DbTool,
     QueryBalancesInput,
     QueryMonthlyReportInput,
     QueryTransactionsInput,
     RegisterTransactionInput,
 )
-from src.agent.tools.fx_tool import FxTool
-from src.utils.timeparse import parse_date_range
-from src.db.base import async_session_maker
-from src.db.crud import AccountCRUD
+from packages.agent.tools.fx_tool import FxTool
+from libs.utils.timeparse import parse_date_range
+from libs.db.base import async_session_maker
+from libs.db.crud import AccountCRUD
 
 
 class FinanceAgent:
@@ -35,7 +35,7 @@ class FinanceAgent:
         self.fx_tool = FxTool()
 
         # Initialize FinancialAnalysisAgent for expense classification
-        from src.agent.financial_agent import FinancialAnalysisAgent
+        from packages.agent.financial_agent import FinancialAnalysisAgent
 
         self.financial_agent = FinancialAnalysisAgent()
 
@@ -49,7 +49,7 @@ class FinanceAgent:
 
     async def process_message(self, message: str, user_id: int) -> str:
         """Process a user message and return a response."""
-        from src.utils.credits import UsageTracker
+        from libs.utils.credits import UsageTracker
 
         # Track OpenAI API usage for this message
         message_preview = f"{message[:50]}{'...' if len(message) > 50 else ''}"
@@ -58,7 +58,7 @@ class FinanceAgent:
             self._usage_tracker = tracker
             try:
                 # Detect language and validate support
-                from src.utils.language import (
+                from libs.utils.language import (
                     validate_supported_language,
                     Messages,
                     detect_language,
@@ -95,7 +95,7 @@ class FinanceAgent:
 
     def _handle_general_message(self, message: str) -> str:
         """Handle general messages that aren't transactions or queries."""
-        from src.utils.language import Messages
+        from libs.utils.language import Messages
 
         lang = getattr(self, "user_language", "en")
         return Messages.get("help", "general_help", lang)
@@ -239,7 +239,7 @@ class FinanceAgent:
 
             # Track usage if tracker is available
             if hasattr(self, "_usage_tracker") and self._usage_tracker:
-                from src.utils.credits import log_usage
+                from libs.utils.credits import log_usage
 
                 usage_data = getattr(response, "usage_metadata", None)
                 log_usage(usage_data, "Transaction intent extraction")
@@ -379,7 +379,7 @@ class FinanceAgent:
 
             # Track usage if tracker is available
             if hasattr(self, "_usage_tracker") and self._usage_tracker:
-                from src.utils.credits import log_usage
+                from libs.utils.credits import log_usage
 
                 usage_data = getattr(response, "usage_metadata", None)
                 log_usage(usage_data, "Query intent extraction")
@@ -413,7 +413,7 @@ class FinanceAgent:
 
             # Use advanced date parsing if date_expression is provided
             if data.get("date_expression"):
-                from src.utils.date_utils import parse_flexible_date
+                from libs.utils.date_utils import parse_flexible_date
 
                 date_range = parse_flexible_date(data["date_expression"])
                 if date_range:
@@ -446,7 +446,7 @@ class FinanceAgent:
                 intent.currency, intent.account_from, intent.account_to, user_id
             )
             if intent.currency == "ERROR_PESO_MISMATCH":
-                from src.utils.language import Messages
+                from libs.utils.language import Messages
 
                 lang = getattr(self, "user_language", "es")
                 if lang == "es":
@@ -465,7 +465,7 @@ class FinanceAgent:
                     intent.currency_to, intent.account_from, intent.account_to, user_id
                 )
                 if intent.currency_to == "ERROR_PESO_MISMATCH":
-                    from src.utils.language import Messages
+                    from libs.utils.language import Messages
 
                     lang = getattr(self, "user_language", "es")
                     if lang == "es":
@@ -681,7 +681,7 @@ class FinanceAgent:
 
                             # If no peso currency found but account has other currencies, this might be an error
                             if account_currencies:
-                                from src.utils.language import Messages
+                                from libs.utils.language import Messages
 
                                 lang = getattr(self, "user_language", "es")
                                 # Return an error indicator - we'll handle this in the calling function
@@ -830,7 +830,7 @@ class FinanceAgent:
 
     def _format_confirmation_message(self, transaction_data: dict) -> str:
         """Format confirmation message for user approval."""
-        from src.utils.language import Messages
+        from libs.utils.language import Messages
 
         lang = getattr(self, "user_language", "en")
 
@@ -931,7 +931,7 @@ class FinanceAgent:
         self, transaction_data: dict, expense_confirmation: dict
     ) -> str:
         """Format confirmation message for expenses with category classification."""
-        from src.utils.language import Messages
+        from libs.utils.language import Messages
 
         lang = expense_confirmation["resolved_language"]
         expense = expense_confirmation["expense"]
@@ -1016,7 +1016,7 @@ class FinanceAgent:
     async def confirm_transaction(self, transaction_data: dict) -> str:
         """Actually save the confirmed transaction."""
         try:
-            from src.utils.language import Messages, detect_language
+            from libs.utils.language import Messages, detect_language
 
             # For expenses with classification, update user memory
             if (
@@ -1052,7 +1052,7 @@ class FinanceAgent:
 
     def _format_success_message(self, transaction_data: dict) -> str:
         """Format success message after confirmation."""
-        from src.utils.language import Messages
+        from libs.utils.language import Messages
 
         lang = getattr(self, "user_language", "en")
 
@@ -1179,7 +1179,7 @@ class FinanceAgent:
                 total = sum(t.amount for t in transactions)
 
                 # Format response with date context
-                from src.utils.date_utils import format_date_range_spanish
+                from libs.utils.date_utils import format_date_range_spanish
 
                 date_str = format_date_range_spanish(intent.start_date, intent.end_date)
 
@@ -1240,7 +1240,7 @@ class FinanceAgent:
                 )
 
                 if largest:
-                    from src.utils.date_utils import format_date_range_spanish
+                    from libs.utils.date_utils import format_date_range_spanish
 
                     date_str = format_date_range_spanish(
                         intent.start_date, intent.end_date
@@ -1262,7 +1262,7 @@ class FinanceAgent:
 
                     return response
                 else:
-                    from src.utils.date_utils import format_date_range_spanish
+                    from libs.utils.date_utils import format_date_range_spanish
 
                     date_str = format_date_range_spanish(
                         intent.start_date, intent.end_date
@@ -1300,7 +1300,7 @@ class FinanceAgent:
                 )
 
                 # Format response with date context
-                from src.utils.date_utils import format_date_range_spanish
+                from libs.utils.date_utils import format_date_range_spanish
 
                 date_str = format_date_range_spanish(intent.start_date, intent.end_date)
 
