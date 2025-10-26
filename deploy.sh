@@ -90,9 +90,8 @@ if ! docker image inspect expense-tracker-api:latest > /dev/null 2>&1; then
     exit 1
 fi
 
-# Create the network if it doesn't exist (needed for migrations)
-docker network inspect expense-tracker-network >/dev/null 2>&1 || \
-    docker network create expense-tracker-network --ipv6 --subnet=fd12:3456:789a::/64
+# Note: Network will be created by docker-compose with IPv6 support
+# We don't pre-create it here to avoid conflicts
 
 # Create a temporary container to run migrations
 echo "Running migration command..."
