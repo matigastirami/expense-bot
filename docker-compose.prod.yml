@@ -1,5 +1,8 @@
 version: "3.8"
 
+# Project name to avoid directory-based naming
+name: expense-tracker
+
 services:
   # REST API Service
   api:

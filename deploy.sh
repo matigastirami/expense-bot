@@ -65,6 +65,13 @@ docker-compose -f docker-compose.prod.yml down || true
 echo -e "${GREEN}✓ Containers stopped${NC}"
 echo ""
 
+# Remove old network to avoid conflicts (if exists)
+echo -e "${YELLOW}Cleaning up old networks...${NC}"
+docker network rm expense-tracker-network 2>/dev/null || true
+docker network rm expense-bot_expense-tracker-network 2>/dev/null || true
+echo -e "${GREEN}✓ Old networks removed${NC}"
+echo ""
+
 # Build Docker images
 echo -e "${YELLOW}Building Docker images...${NC}"
 docker-compose -f docker-compose.prod.yml build --no-cache
