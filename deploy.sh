@@ -92,7 +92,7 @@ fi
 
 # Create the network if it doesn't exist (needed for migrations)
 docker network inspect expense-tracker-network >/dev/null 2>&1 || \
-    docker network create expense-tracker-network --ipv6 --subnet=fd00::/64
+    docker network create expense-tracker-network --ipv6 --subnet=fd12:3456:789a::/64
 
 # Create a temporary container to run migrations
 echo "Running migration command..."
