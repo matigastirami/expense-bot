@@ -237,7 +237,7 @@ openssl rand -hex 32
 sudo cp nginx.conf /etc/nginx/sites-available/expense-tracker
 
 # Replace 'yourdomain.com' with your actual domain
-sudo sed -i 's/yourdomain.com/your-actual-domain.com/g' /etc/nginx/sites-available/expense-tracker
+sudo sed -i 's/yourdomain.com/expensgram.xyz/g' /etc/nginx/sites-available/expense-tracker
 
 # Or manually edit the file
 sudo nano /etc/nginx/sites-available/expense-tracker
@@ -251,7 +251,7 @@ sudo tee /etc/nginx/sites-available/expense-tracker-temp > /dev/null <<EOF
 server {
     listen 80;
     server_name yourdomain.com www.yourdomain.com api.yourdomain.com;
-    
+
     location / {
         return 200 "Server is ready for SSL setup";
         add_header Content-Type text/plain;
@@ -260,7 +260,7 @@ server {
 EOF
 
 # Replace with your domain
-sudo sed -i 's/yourdomain.com/your-actual-domain.com/g' /etc/nginx/sites-available/expense-tracker-temp
+sudo sed -i 's/yourdomain.com/expensgram.xyz/g' /etc/nginx/sites-available/expense-tracker-temp
 
 # Enable temporary config
 sudo ln -sf /etc/nginx/sites-available/expense-tracker-temp /etc/nginx/sites-enabled/
@@ -611,14 +611,14 @@ sudo systemctl restart ssh
 
 ## Support & Resources
 
-- **Logs location:** 
+- **Logs location:**
   - Nginx: `/var/log/nginx/`
   - Application: `docker-compose logs`
-  
+
 - **Configuration files:**
   - Nginx: `/etc/nginx/sites-available/expense-tracker`
   - Environment: `~/apps/expense-tracker-claude/.env`
-  
+
 - **Useful links:**
   - Hetzner Docs: https://docs.hetzner.com/
   - Let's Encrypt: https://letsencrypt.org/
