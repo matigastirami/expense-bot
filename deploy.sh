@@ -83,9 +83,14 @@ if ! docker image inspect expense-tracker-api:latest > /dev/null 2>&1; then
     exit 1
 fi
 
+# Create the network if it doesn't exist (needed for migrations)
+docker network inspect expense-tracker-network >/dev/null 2>&1 || \
+    docker network create expense-tracker-network --ipv6 --subnet=fd00::/64
+
 # Create a temporary container to run migrations
 echo "Running migration command..."
 docker run --rm \
+    --network expense-tracker-network \
     -e POSTGRES_HOST="$POSTGRES_HOST" \
     -e POSTGRES_PORT="${POSTGRES_PORT:-5432}" \
     -e POSTGRES_DB="$POSTGRES_DB" \
@@ -102,16 +107,22 @@ else
     echo -e "${RED}Error: Database migrations failed with exit code $migration_status${NC}"
     echo ""
     echo "Common causes:"
-    echo "  1. Database connection issue (check POSTGRES_* variables in .env)"
-    echo "  2. Database not accessible from this server"
-    echo "  3. Invalid credentials"
-    echo "  4. Migration conflicts or errors"
+    echo "  1. IPv6 connectivity issue (Supabase uses IPv6)"
+    echo "     - Enable IPv6 in Docker daemon: /etc/docker/daemon.json"
+    echo "     - Restart Docker: sudo systemctl restart docker"
+    echo "  2. Database connection issue (check POSTGRES_* variables in .env)"
+    echo "  3. Database not accessible from this server (firewall/network)"
+    echo "  4. Invalid credentials"
+    echo "  5. Migration conflicts or errors"
     echo ""
-    echo "To debug, try connecting manually:"
-    echo "  docker run --rm -it -e POSTGRES_HOST=\"$POSTGRES_HOST\" -e POSTGRES_USER=\"$POSTGRES_USER\" -e POSTGRES_PASSWORD=\"$POSTGRES_PASSWORD\" expense-tracker-api:latest sh"
+    echo "To test IPv6 connectivity:"
+    echo "  ping6 -c 3 $POSTGRES_HOST"
+    echo ""
+    echo "To debug database connection:"
+    echo "  docker run --rm -it --network expense-tracker-network -e POSTGRES_HOST=\"$POSTGRES_HOST\" -e POSTGRES_USER=\"$POSTGRES_USER\" -e POSTGRES_PASSWORD=\"$POSTGRES_PASSWORD\" expense-tracker-api:latest sh"
     echo ""
     echo "Or check migration logs:"
-    echo "  docker run --rm -e POSTGRES_HOST=\"$POSTGRES_HOST\" -e POSTGRES_PORT=\"${POSTGRES_PORT:-5432}\" -e POSTGRES_DB=\"$POSTGRES_DB\" -e POSTGRES_USER=\"$POSTGRES_USER\" -e POSTGRES_PASSWORD=\"$POSTGRES_PASSWORD\" expense-tracker-api:latest alembic history"
+    echo "  docker run --rm --network expense-tracker-network -e POSTGRES_HOST=\"$POSTGRES_HOST\" -e POSTGRES_PORT=\"${POSTGRES_PORT:-5432}\" -e POSTGRES_DB=\"$POSTGRES_DB\" -e POSTGRES_USER=\"$POSTGRES_USER\" -e POSTGRES_PASSWORD=\"$POSTGRES_PASSWORD\" expense-tracker-api:latest alembic history"
     exit 1
 fi
 echo ""
