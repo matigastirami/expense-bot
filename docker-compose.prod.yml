@@ -3,6 +3,7 @@ version: "3.8"
 services:
   # REST API Service
   api:
+    image: expense-tracker-api:latest
     build:
       context: .
       dockerfile: packages/api/Dockerfile
@@ -45,6 +46,7 @@ services:
 
   # Telegram Bot Service
   bot:
+    image: expense-tracker-bot:latest
     build:
       context: .
       dockerfile: packages/telegram/Dockerfile
@@ -81,6 +83,7 @@ services:
 
   # Web Frontend
   web:
+    image: expense-tracker-web:latest
     build:
       context: packages/web
       dockerfile: Dockerfile
