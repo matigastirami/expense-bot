@@ -18,6 +18,9 @@ RUN pip install --no-cache-dir -e .
 # Install API-specific dependencies
 RUN pip install --no-cache-dir -e packages/api/
 
+# Copy Alembic configuration
+COPY alembic.ini /app/alembic.ini
+
 # Copy shared libraries
 COPY libs/ /app/libs/
 
