@@ -75,7 +75,16 @@ echo ""
 echo -e "${YELLOW}Running database migrations...${NC}"
 echo "This will connect to your Supabase database and run pending migrations..."
 
+# Verify the image exists
+if ! docker image inspect expense-tracker-api:latest > /dev/null 2>&1; then
+    echo -e "${RED}Error: Docker image 'expense-tracker-api:latest' not found!${NC}"
+    echo "This should have been built in the previous step."
+    echo "Please check the build logs above for errors."
+    exit 1
+fi
+
 # Create a temporary container to run migrations
+echo "Running migration command..."
 docker run --rm \
     -e POSTGRES_HOST="$POSTGRES_HOST" \
     -e POSTGRES_PORT="${POSTGRES_PORT:-5432}" \
@@ -86,11 +95,23 @@ docker run --rm \
     expense-tracker-api:latest \
     sh -c "cd /app && alembic upgrade head"
 
-if [ $? -eq 0 ]; then
+migration_status=$?
+if [ $migration_status -eq 0 ]; then
     echo -e "${GREEN}✓ Database migrations completed successfully${NC}"
 else
-    echo -e "${RED}Error: Database migrations failed!${NC}"
-    echo "Please check your database connection settings and try again."
+    echo -e "${RED}Error: Database migrations failed with exit code $migration_status${NC}"
+    echo ""
+    echo "Common causes:"
+    echo "  1. Database connection issue (check POSTGRES_* variables in .env)"
+    echo "  2. Database not accessible from this server"
+    echo "  3. Invalid credentials"
+    echo "  4. Migration conflicts or errors"
+    echo ""
+    echo "To debug, try connecting manually:"
+    echo "  docker run --rm -it -e POSTGRES_HOST=\"$POSTGRES_HOST\" -e POSTGRES_USER=\"$POSTGRES_USER\" -e POSTGRES_PASSWORD=\"$POSTGRES_PASSWORD\" expense-tracker-api:latest sh"
+    echo ""
+    echo "Or check migration logs:"
+    echo "  docker run --rm -e POSTGRES_HOST=\"$POSTGRES_HOST\" -e POSTGRES_PORT=\"${POSTGRES_PORT:-5432}\" -e POSTGRES_DB=\"$POSTGRES_DB\" -e POSTGRES_USER=\"$POSTGRES_USER\" -e POSTGRES_PASSWORD=\"$POSTGRES_PASSWORD\" expense-tracker-api:latest alembic history"
     exit 1
 fi
 echo ""
