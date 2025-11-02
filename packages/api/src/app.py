@@ -22,16 +22,24 @@ from libs.db.models import TransactionType
 app = Flask(__name__)
 
 # CORS Configuration
-# Allow localhost and ngrok/tunnel domains for development
+# Get allowed origins from environment or use defaults
+allowed_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+
+# Default origins for development
+default_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://45ae773014be.ngrok-free.app",
+]
+
+# Combine default and custom origins
+all_origins = default_origins + [origin.strip() for origin in allowed_origins if origin.strip()]
+
+print(f"CORS allowed origins: {all_origins}")
+
 CORS(app, resources={
     r"/*": {
-        "origins": [
-            "http://localhost:3000",
-            "http://localhost:5173",
-            # Add your ngrok URL here for Telegram Login Widget testing
-            # Example: "https://abc123.ngrok.io"
-            "https://45ae773014be.ngrok-free.app",
-        ],
+        "origins": all_origins,
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True,
