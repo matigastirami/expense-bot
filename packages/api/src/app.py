@@ -172,7 +172,10 @@ async def telegram_auth():
     import hashlib
     import hmac
 
+    print("=== Telegram Auth Request Started ===")
+
     data = request.get_json()
+    print(f"Received data: {data}")
 
     # Extract Telegram data
     telegram_id = str(data.get("id"))
@@ -182,13 +185,30 @@ async def telegram_auth():
     auth_date = data.get("auth_date")
     hash_value = data.get("hash")
 
+    print(f"Extracted fields - telegram_id: {telegram_id}, first_name: {first_name}, username: {username}, auth_date: {auth_date}, hash present: {bool(hash_value)}")
+
     if not telegram_id or not first_name or not auth_date or not hash_value:
-        return jsonify({"error": "Missing required Telegram authentication data"}), 400
+        missing_fields = []
+        if not telegram_id:
+            missing_fields.append("id")
+        if not first_name:
+            missing_fields.append("first_name")
+        if not auth_date:
+            missing_fields.append("auth_date")
+        if not hash_value:
+            missing_fields.append("hash")
+
+        error_msg = f"Missing required Telegram authentication data: {', '.join(missing_fields)}"
+        print(f"ERROR: {error_msg}")
+        return jsonify({"error": error_msg}), 400
 
     # Verify Telegram authentication (security check)
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not bot_token:
+        print("ERROR: TELEGRAM_BOT_TOKEN environment variable not set")
         return jsonify({"error": "Telegram bot not configured"}), 500
+
+    print(f"Bot token configured (length: {len(bot_token)})")
 
     # Create data check string
     check_data = []
@@ -197,8 +217,11 @@ async def telegram_auth():
             check_data.append(f"{key}={data[key]}")
     data_check_string = "\n".join(check_data)
 
+    print(f"Data check string:\n{data_check_string}")
+
     # Create secret key
     secret_key = hashlib.sha256(bot_token.encode()).digest()
+    print(f"Secret key created (length: {len(secret_key)})")
 
     # Calculate hash
     calculated_hash = hmac.new(
@@ -207,42 +230,79 @@ async def telegram_auth():
         hashlib.sha256
     ).hexdigest()
 
+    print(f"Calculated hash: {calculated_hash}")
+    print(f"Received hash:   {hash_value}")
+    print(f"Hash match: {calculated_hash == hash_value}")
+
     # Verify hash
     if calculated_hash != hash_value:
+        print("ERROR: Hash verification failed - invalid Telegram authentication")
         return jsonify({"error": "Invalid Telegram authentication"}), 401
+
+    print("Hash verification successful")
 
     # Check if auth_date is recent (within 24 hours)
     import time
     current_time = int(time.time())
-    if current_time - int(auth_date) > 86400:  # 24 hours
+    auth_age = current_time - int(auth_date)
+    print(f"Auth timestamp age: {auth_age} seconds ({auth_age / 3600:.2f} hours)")
+
+    if auth_age > 86400:  # 24 hours
+        print(f"ERROR: Authentication data is too old ({auth_age} seconds)")
         return jsonify({"error": "Authentication data is too old"}), 401
 
+    print("Auth timestamp validation successful")
+
     async with async_session_maker() as session:
+        print(f"Looking up user by telegram_id: {telegram_id}")
+
         # Check if user exists
         user = await UserService.get_user_by_telegram_id(session, telegram_id)
         is_new_user = user is None
 
+        print(f"User lookup result - is_new_user: {is_new_user}, user found: {user is not None}")
+
         if not user:
+            print(f"Creating new user - telegram_id: {telegram_id}, first_name: {first_name}, last_name: {last_name}, username: {username}")
+
             # Create new user with Telegram data
             from libs.db.crud import UserCRUD
-            user = await UserCRUD.create(
-                session=session,
-                telegram_user_id=telegram_id,
-                first_name=first_name,
-                last_name=last_name,
-                username=username,
-            )
+            try:
+                user = await UserCRUD.create(
+                    session=session,
+                    telegram_user_id=telegram_id,
+                    first_name=first_name,
+                    last_name=last_name,
+                    username=username,
+                )
+                print(f"User created successfully - user_id: {user.id}")
+            except Exception as e:
+                print(f"ERROR creating user: {str(e)}")
+                print(f"Exception type: {type(e).__name__}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({"error": f"Failed to create user: {str(e)}"}), 500
+        else:
+            print(f"Existing user found - user_id: {user.id}, telegram_id: {user.telegram_user_id}")
 
         # Generate access token
-        access_token = create_access_token(
-            identity=str(user.id),
-            additional_claims={
-                "telegram_id": user.telegram_user_id,
-                "email": user.email
-            }
-        )
+        print(f"Generating access token for user_id: {user.id}")
+        try:
+            access_token = create_access_token(
+                identity=str(user.id),
+                additional_claims={
+                    "telegram_id": user.telegram_user_id,
+                    "email": user.email
+                }
+            )
+            print("Access token generated successfully")
+        except Exception as e:
+            print(f"ERROR generating access token: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": f"Failed to generate token: {str(e)}"}), 500
 
-        return jsonify({
+        response_data = {
             "access_token": access_token,
             "user": {
                 "id": user.id,
@@ -253,7 +313,12 @@ async def telegram_auth():
                 "email": user.email,
             },
             "is_new_user": is_new_user
-        }), 200
+        }
+
+        print(f"Telegram auth successful - returning response for user_id: {user.id}, is_new_user: {is_new_user}")
+        print("=== Telegram Auth Request Completed Successfully ===")
+
+        return jsonify(response_data), 200
 
 
 # ==================== Accounts ====================
