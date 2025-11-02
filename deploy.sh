@@ -78,6 +78,17 @@ docker-compose -f docker-compose.prod.yml build --no-cache
 echo -e "${GREEN}✓ Docker images built${NC}"
 echo ""
 
+# Create the network with IPv6 support before running migrations
+echo -e "${YELLOW}Creating Docker network with IPv6 support...${NC}"
+docker network create expense-tracker-network \
+    --driver bridge \
+    --ipv6 \
+    --subnet="fd00::/80" 2>/dev/null || {
+    echo -e "${YELLOW}Network already exists or IPv6 not available, continuing...${NC}"
+}
+echo -e "${GREEN}✓ Network ready${NC}"
+echo ""
+
 # Run database migrations
 echo -e "${YELLOW}Running database migrations...${NC}"
 echo "This will connect to your Supabase database and run pending migrations..."
