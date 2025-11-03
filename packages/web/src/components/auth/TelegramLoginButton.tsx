@@ -27,6 +27,9 @@ export const TelegramLoginButton = ({
   const { telegramSignIn } = useAuth();
 
   useEffect(() => {
+    console.log("TelegramLoginButton mounting, botName:", botName);
+    console.log("Current window location:", window.location.href);
+
     if (!botName) {
       console.warn("Telegram bot name not configured");
       return;
@@ -34,14 +37,21 @@ export const TelegramLoginButton = ({
 
     // Define the callback function
     const handleTelegramAuth = async (user: TelegramAuthData) => {
+      console.log("=== Telegram Widget Callback Triggered ===");
+      console.log("Received user data from Telegram:", user);
+
       try {
+        console.log("Calling API to authenticate...");
         // Call backend to verify and authenticate using auth context
         await telegramSignIn(user);
 
+        console.log("Authentication successful, navigating to dashboard");
         // Navigate to dashboard
         navigate("/dashboard");
       } catch (error) {
         const errorMessage = handleApiError(error);
+        console.error("Telegram authentication failed:", errorMessage);
+        console.error("Full error:", error);
         if (onError) {
           onError(errorMessage);
         } else {
