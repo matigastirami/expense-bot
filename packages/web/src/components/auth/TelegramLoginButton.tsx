@@ -61,9 +61,8 @@ export const TelegramLoginButton = ({
     };
 
     // Make the callback globally accessible for Telegram widget
-    window.TelegramLoginWidget = {
-      dataOnauth: handleTelegramAuth,
-    };
+    // Use a simple function name that Telegram can call
+    (window as any).onTelegramAuth = handleTelegramAuth;
 
     // Load Telegram Widget script
     const script = document.createElement("script");
@@ -72,7 +71,7 @@ export const TelegramLoginButton = ({
     script.setAttribute("data-telegram-login", botName);
     script.setAttribute("data-size", "large");
     script.setAttribute("data-radius", "8");
-    script.setAttribute("data-onauth", "TelegramLoginWidget.dataOnauth(user)");
+    script.setAttribute("data-onauth", "onTelegramAuth(user)");
     script.setAttribute("data-request-access", "write");
 
     script.onload = () => {
@@ -95,7 +94,7 @@ export const TelegramLoginButton = ({
       if (containerRef.current && script.parentNode === containerRef.current) {
         containerRef.current.removeChild(script);
       }
-      delete window.TelegramLoginWidget;
+      delete (window as any).onTelegramAuth;
     };
   }, [botName, navigate, onError, telegramSignIn]);
 
