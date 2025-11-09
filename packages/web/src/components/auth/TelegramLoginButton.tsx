@@ -35,54 +35,80 @@ export const TelegramLoginButton = ({
       return;
     }
 
-    // Define the callback function
-    const handleTelegramAuth = async (user: TelegramAuthData) => {
-      console.log("=== Telegram Widget Callback Triggered ===");
-      console.log("Received user data from Telegram:", user);
+    // Check if we're coming back from Telegram with auth data
+    const urlParams = new URLSearchParams(window.location.search);
+    const telegramData: any = {};
 
-      try {
-        console.log("Calling API to authenticate...");
-        // Call backend to verify and authenticate using auth context
-        await telegramSignIn(user);
+    // Telegram sends these parameters: id, first_name, last_name, username, photo_url, auth_date, hash
+    if (urlParams.has("id") && urlParams.has("hash")) {
+      console.log("=== Telegram redirect detected ===");
 
-        console.log("Authentication successful, navigating to dashboard");
-        // Navigate to dashboard
-        navigate("/dashboard");
-      } catch (error) {
-        const errorMessage = handleApiError(error);
-        console.error("Telegram authentication failed:", errorMessage);
-        console.error("Full error:", error);
-        if (onError) {
-          onError(errorMessage);
-        } else {
-          console.error("Telegram authentication failed:", errorMessage);
+      // Extract all Telegram parameters
+      [
+        "id",
+        "first_name",
+        "last_name",
+        "username",
+        "photo_url",
+        "auth_date",
+        "hash",
+      ].forEach((key) => {
+        const value = urlParams.get(key);
+        if (value) {
+          telegramData[key === "id" ? "id" : key] =
+            key === "id" || key === "auth_date" ? parseInt(value) : value;
         }
-      }
-    };
+      });
 
-    // Make the callback globally accessible for Telegram widget
-    // Use a simple function name that Telegram can call
-    (window as any).onTelegramAuth = handleTelegramAuth;
+      console.log("Telegram auth data from URL:", telegramData);
 
-    // Load Telegram Widget script
+      // Authenticate with backend
+      const authenticate = async () => {
+        try {
+          console.log("Calling API to authenticate...");
+          await telegramSignIn(telegramData as TelegramAuthData);
+
+          console.log("Authentication successful, navigating to dashboard");
+          // Clean URL and navigate to dashboard
+          window.history.replaceState(
+            {},
+            document.title,
+            window.location.pathname,
+          );
+          navigate("/dashboard");
+        } catch (error) {
+          const errorMessage = handleApiError(error);
+          console.error("Telegram authentication failed:", errorMessage);
+          console.error("Full error:", error);
+          if (onError) {
+            onError(errorMessage);
+          }
+        }
+      };
+
+      authenticate();
+      return; // Don't load the widget if we're processing auth
+    }
+
+    // Load Telegram Widget script with redirect method
     const script = document.createElement("script");
     script.src = "https://telegram.org/js/telegram-widget.js?22";
     script.async = true;
     script.setAttribute("data-telegram-login", botName);
     script.setAttribute("data-size", "large");
     script.setAttribute("data-radius", "8");
-    script.setAttribute("data-onauth", "onTelegramAuth(user)");
+    script.setAttribute("data-auth-url", window.location.href); // Use redirect instead of callback
     script.setAttribute("data-request-access", "write");
 
     script.onload = () => {
-      console.log("Telegram widget script loaded successfully");
+      console.log("Telegram widget script loaded successfully (redirect mode)");
     };
 
     script.onerror = (error) => {
       console.error("Failed to load Telegram widget script:", error);
     };
 
-    console.log("Appending Telegram widget script to DOM...");
+    console.log("Appending Telegram widget script to DOM (redirect mode)...");
     if (containerRef.current) {
       containerRef.current.appendChild(script);
     } else {
@@ -94,7 +120,6 @@ export const TelegramLoginButton = ({
       if (containerRef.current && script.parentNode === containerRef.current) {
         containerRef.current.removeChild(script);
       }
-      delete (window as any).onTelegramAuth;
     };
   }, [botName, navigate, onError, telegramSignIn]);
 
