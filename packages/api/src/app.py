@@ -32,10 +32,11 @@ default_origins = [
     "https://45ae773014be.ngrok-free.app",
 ]
 
-# Combine default and custom origins
-all_origins = default_origins + [origin.strip() for origin in allowed_origins if origin.strip()]
+# Combine default and custom origins, remove duplicates
+all_origins = list(set(default_origins + [origin.strip() for origin in allowed_origins if origin.strip()]))
 
 print(f"CORS allowed origins: {all_origins}")
+print(f"CORS_ORIGINS env var: {os.getenv('CORS_ORIGINS')}")
 
 CORS(app, resources={
     r"/*": {
@@ -62,6 +63,16 @@ jwt = JWTManager(app)
 def get_health():
     """Health check endpoint."""
     return jsonify({"healthy": True, "timestamp": datetime.now().isoformat()})
+
+
+@app.route("/test-cors", methods=["GET", "POST", "OPTIONS"])
+def test_cors():
+    """Test endpoint to verify CORS is working."""
+    print(f"=== TEST CORS ENDPOINT HIT ===")
+    print(f"Method: {request.method}")
+    print(f"Origin: {request.headers.get('Origin')}")
+    print(f"Headers: {dict(request.headers)}")
+    return jsonify({"message": "CORS test successful", "method": request.method})
 
 
 # ==================== Authentication ====================

@@ -75,8 +75,19 @@ export const TelegramLoginButton = ({
     script.setAttribute("data-onauth", "TelegramLoginWidget.dataOnauth(user)");
     script.setAttribute("data-request-access", "write");
 
+    script.onload = () => {
+      console.log("Telegram widget script loaded successfully");
+    };
+
+    script.onerror = (error) => {
+      console.error("Failed to load Telegram widget script:", error);
+    };
+
+    console.log("Appending Telegram widget script to DOM...");
     if (containerRef.current) {
       containerRef.current.appendChild(script);
+    } else {
+      console.error("Container ref is null, cannot append script");
     }
 
     return () => {
