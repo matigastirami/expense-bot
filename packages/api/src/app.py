@@ -673,10 +673,11 @@ async def create_transaction():
     date = None
     if date_str:
         try:
-            # Handle date-only strings (YYYY-MM-DD) by treating them as midnight UTC
+            # Handle date-only strings (YYYY-MM-DD) by treating them as noon UTC
+            # This prevents timezone conversion issues where the date might shift
             if len(date_str) == 10 and 'T' not in date_str:
-                # Date-only format, append time and timezone
-                date = datetime.fromisoformat(date_str + 'T00:00:00+00:00')
+                # Date-only format, use noon UTC to avoid date boundary issues
+                date = datetime.fromisoformat(date_str + 'T12:00:00+00:00')
             else:
                 # Full datetime format
                 date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
@@ -770,10 +771,11 @@ async def update_transaction(transaction_id: int):
     date = None
     if date_str:
         try:
-            # Handle date-only strings (YYYY-MM-DD) by treating them as midnight UTC
+            # Handle date-only strings (YYYY-MM-DD) by treating them as noon UTC
+            # This prevents timezone conversion issues where the date might shift
             if len(date_str) == 10 and 'T' not in date_str:
-                # Date-only format, append time and timezone
-                date = datetime.fromisoformat(date_str + 'T00:00:00+00:00')
+                # Date-only format, use noon UTC to avoid date boundary issues
+                date = datetime.fromisoformat(date_str + 'T12:00:00+00:00')
             else:
                 # Full datetime format
                 date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))

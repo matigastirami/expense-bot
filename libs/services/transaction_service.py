@@ -70,7 +70,8 @@ class TransactionService:
         amount_decimal = Decimal(str(amount))
         amount_to_decimal = Decimal(str(amount_to)) if amount_to else None
         exchange_rate_decimal = Decimal(str(exchange_rate)) if exchange_rate else None
-        transaction_date = date or datetime.utcnow()
+        # Use noon UTC for current date to avoid timezone boundary issues
+        transaction_date = date or datetime.now(datetime.timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
 
         # Get or create accounts
         account_from_obj = None
