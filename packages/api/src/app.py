@@ -792,9 +792,6 @@ async def update_transaction(transaction_id: int):
             status_code = 404 if "not found" in error.lower() else 400
             return jsonify({"error": error}), status_code
 
-        # Refresh relationships to include category and merchant
-        await session.refresh(transaction, ["category", "merchant", "account_from", "account_to"])
-
         return jsonify({
             "id": transaction.id,
             "type": transaction.type.value if hasattr(transaction.type, 'value') else str(transaction.type),

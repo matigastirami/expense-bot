@@ -641,6 +641,21 @@ class TransactionService:
             transaction.exchange_rate = Decimal(str(exchange_rate))
 
         await session.commit()
-        await session.refresh(transaction)
+
+        # Eagerly load relationships to avoid lazy loading issues
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        result = await session.execute(
+            select(Transaction)
+            .where(Transaction.id == transaction.id)
+            .options(
+                selectinload(Transaction.account_from),
+                selectinload(Transaction.account_to),
+                selectinload(Transaction.category),
+                selectinload(Transaction.merchant),
+            )
+        )
+        transaction = result.scalar_one()
 
         return transaction, None

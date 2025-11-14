@@ -232,8 +232,19 @@ class TransactionCRUD:
         )
         session.add(transaction)
         await session.commit()
-        await session.refresh(transaction)
-        return transaction
+
+        # Eagerly load relationships to avoid lazy loading issues
+        result = await session.execute(
+            select(Transaction)
+            .where(Transaction.id == transaction.id)
+            .options(
+                selectinload(Transaction.account_from),
+                selectinload(Transaction.account_to),
+                selectinload(Transaction.category),
+                selectinload(Transaction.merchant),
+            )
+        )
+        return result.scalar_one()
 
     @staticmethod
     async def get_by_date_range(
