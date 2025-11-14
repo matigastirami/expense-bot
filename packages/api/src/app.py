@@ -673,9 +673,15 @@ async def create_transaction():
     date = None
     if date_str:
         try:
-            date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            # Handle date-only strings (YYYY-MM-DD) by treating them as midnight UTC
+            if len(date_str) == 10 and 'T' not in date_str:
+                # Date-only format, append time and timezone
+                date = datetime.fromisoformat(date_str + 'T00:00:00+00:00')
+            else:
+                # Full datetime format
+                date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
         except ValueError:
-            return jsonify({"error": "Invalid date format. Use ISO format"}), 400
+            return jsonify({"error": "Invalid date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"}), 400
 
     async with async_session_maker() as session:
         transaction, error = await TransactionService.create_transaction(
@@ -764,9 +770,15 @@ async def update_transaction(transaction_id: int):
     date = None
     if date_str:
         try:
-            date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            # Handle date-only strings (YYYY-MM-DD) by treating them as midnight UTC
+            if len(date_str) == 10 and 'T' not in date_str:
+                # Date-only format, append time and timezone
+                date = datetime.fromisoformat(date_str + 'T00:00:00+00:00')
+            else:
+                # Full datetime format
+                date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
         except ValueError:
-            return jsonify({"error": "Invalid date format. Use ISO format"}), 400
+            return jsonify({"error": "Invalid date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"}), 400
 
     async with async_session_maker() as session:
         transaction, error = await TransactionService.update_transaction(
